@@ -1,7 +1,7 @@
 // ============================================================
-// FitTrack Pro - AI 饮食助手 (DeepSeek Chat)
+// FitTrack Pro - AI 饮食/训练助手 (DeepSeek Chat)
 // ------------------------------------------------------------
-// Chat with DeepSeek about food calories / macros / meal plans.
+// Chat with DeepSeek about food / macros / meals or training plans.
 // API key is stored locally in AsyncStorage, never in the bundle.
 // ============================================================
 
@@ -11,13 +11,19 @@ import {
   StyleSheet, ActivityIndicator, KeyboardAvoidingView, Platform, Keyboard,
   Dimensions, PixelRatio,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useRoute } from '@react-navigation/native';
 import { useApp } from '../hooks/useAppState';
 import { Colors, Spacing, BorderRadius, Shadow, Typography } from '../theme';
 import PressableScale from '../components/PressableScale';
 import {
-  AiSettings, AiContext, chatWithDeepSeek, DEFAULT_AI_MODEL, AI_MODELS,
+  AiSettings, AiContext, AiTrainingContext, ParsedFood, GeneratedTrainingPlan,
+  chatWithDeepSeek, extractFoodFromReply, extractTrainingPlanFromReply,
+  buildAiSystemPrompt, buildTrainingSystemPrompt, DEFAULT_AI_MODEL, AI_MODELS,
 } from '../services/ai';
 import { loadAiSettings, saveAiSettings } from '../storage/storage';
+import { createId } from '../utils/calculations';
+import { TrainingPlan } from '../types';
 
 interface ChatMsg {
   id: string;
@@ -25,12 +31,20 @@ interface ChatMsg {
   text: string;
 }
 
-const QUICK_QUESTIONS = [
+const DIET_QUICK_QUESTIONS = [
   '鸡胸肉每100克的营养？',
+  '我吃了200克鸡胸肉和一碗米饭，帮我算热量',
   '帮我安排今天的一日三餐',
   '训练日碳水和蛋白质怎么配',
   '现在还能吃多少热量？',
-  '减脂期间晚上吃什么好',
+];
+
+const TRAINING_QUICK_QUESTIONS = [
+  '帮我生成一个全身增肌训练计划',
+  '我练上肢推A，帮我优化动作安排',
+  '减脂期一周怎么安排训练',
+  '给我一个新手入门计划',
+  '今天休息日，适合做什么恢复？',
 ];
 
 function newId() {
@@ -39,6 +53,11 @@ function newId() {
 
 export default function AiChatScreen({ navigation }: any) {
   const app = useApp();
+  const route = useRoute();
+  const mode: 'diet' | 'training' = (route.params as any)?.mode ?? 'diet';
+  const isTraining = mode === 'training';
+  const quickQuestions = isTraining ? TRAINING_QUICK_QUESTIONS : DIET_QUICK_QUESTIONS;
+
   const [loaded, setLoaded] = useState(false);
   const [settings, setSettings] = useState<AiSettings | null>(null);
 
@@ -53,14 +72,17 @@ export default function AiChatScreen({ navigation }: any) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [kb, setKb] = useState(0);
+  const [generatedFood, setGeneratedFood] = useState<ParsedFood | null>(null);
+  const [generatedPlan, setGeneratedPlan] = useState<GeneratedTrainingPlan | null>(null);
 
   const scrollRef = useRef<ScrollView>(null);
+  const insets = useSafeAreaInsets();
 
   // Manual keyboard tracking. Some Android IMEs (e.g. WeChat input on vivo)
-  // emit a spurious second event with a near-zero height that KeyboardAvoidingView
-  // applies as the final value, leaving the input hidden behind the keyboard.
-  // We therefore keep the largest plausible height seen since the keyboard
-  // appeared, and reset on hide.
+  // emit a spurious second event with a near-zero height that would otherwise
+  // drop the input back behind the keyboard. The chat page is full-screen
+  // (tab bar hidden) so lifting by the full keyboard height lands the bar
+  // exactly flush with the keyboard top. The max() guards the spurious events.
   useEffect(() => {
     const screenH = Dimensions.get('window').height / PixelRatio.get();
     const s = Keyboard.addListener('keyboardDidShow', e => {
@@ -68,7 +90,9 @@ export default function AiChatScreen({ navigation }: any) {
       const fromY = Math.max(0, screenH - (e.endCoordinates.screenY || screenH));
       setKb(prev => Math.max(prev, reported, fromY));
     });
-    const h = Keyboard.addListener('keyboardDidHide', () => setKb(0));
+    const h = Keyboard.addListener('keyboardDidHide', () => {
+      setKb(0);
+    });
     return () => { s.remove(); h.remove(); };
   }, []);
 
@@ -86,6 +110,7 @@ export default function AiChatScreen({ navigation }: any) {
 
   useEffect(() => {
     navigation.setOptions({
+      title: isTraining ? 'AI 训练助手' : 'AI 饮食助手',
       headerRight: () =>
         messages.length > 0 ? (
           <PressableScale onPress={() => setMessages([])} style={styles.clearBtn}>
@@ -93,7 +118,7 @@ export default function AiChatScreen({ navigation }: any) {
           </PressableScale>
         ) : null,
     });
-  }, [navigation, messages.length]);
+  }, [navigation, messages.length, isTraining]);
 
   const showSetupMsg = (text: string) => {
     setSetupMsg(text);
@@ -111,13 +136,61 @@ export default function AiChatScreen({ navigation }: any) {
     showSetupMsg('已保存，可以开始提问了');
   };
 
-  const buildContext = (): AiContext => ({
-    profile: app.profile,
-    dietEntries: app.todayDietEntries,
-    trainingLog: app.todayTrainingLog,
-    isTrainingDay: app.isTrainingDay,
-    trainingCal: app.trainingCal,
-  });
+  // The chat page can be pushed from any tab stack. Only the Diet tab stack
+  // has no "DietPage" route (its main screen is "DietMain"), so pick the right
+  // target instead of letting NAVIGATE fail.
+  const goAddFood = () => {
+    const state = navigation.getState();
+    const hasDietPage = state?.routes?.some((r: any) => r.name === 'DietPage');
+    if (hasDietPage) {
+      navigation.navigate('DietPage');
+    } else {
+      navigation.navigate('DietMain');
+    }
+  };
+
+  const goAddPlan = () => {
+    const state = navigation.getState();
+    const hasTrainingPage = state?.routes?.some((r: any) => r.name === 'TrainingPage');
+    if (hasTrainingPage) {
+      navigation.navigate('TrainingPage');
+    } else {
+      navigation.navigate('TrainingMain');
+    }
+  };
+
+  const buildSystemPrompt = (): string => {
+    const recentTrainingLogs = app.historyTrainingLogs.slice(0, 14);
+    const recentDietLogs = app.historyDietLogs.slice(0, 14);
+    const weightHistory = app.weightHistory.slice(-10);
+
+    if (isTraining) {
+      const tctx: AiTrainingContext = {
+        profile: app.profile,
+        plans: app.plans,
+        todayWorkout: app.todayWorkout,
+        todayTrainingLog: app.todayTrainingLog,
+        isTrainingDay: app.isTrainingDay,
+        trainingCal: app.trainingCal,
+        trainingVol: app.trainingVol,
+        recentTrainingLogs,
+        recentDietLogs,
+        weightHistory,
+      };
+      return buildTrainingSystemPrompt(tctx);
+    }
+    const dctx: AiContext = {
+      profile: app.profile,
+      dietEntries: app.todayDietEntries,
+      trainingLog: app.todayTrainingLog,
+      isTrainingDay: app.isTrainingDay,
+      trainingCal: app.trainingCal,
+      recentTrainingLogs,
+      recentDietLogs,
+      weightHistory,
+    };
+    return buildAiSystemPrompt(dctx);
+  };
 
   const send = async (raw?: string) => {
     const content = (raw ?? input).trim();
@@ -128,6 +201,8 @@ export default function AiChatScreen({ navigation }: any) {
     setMessages(prev => [...prev, userMsg]);
     setInput('');
     setError('');
+    setGeneratedFood(null);
+    setGeneratedPlan(null);
     setLoading(true);
 
     try {
@@ -135,9 +210,43 @@ export default function AiChatScreen({ navigation }: any) {
         settings.apiKey,
         settings.model,
         [...history, { role: 'user', content }],
-        buildContext()
+        buildSystemPrompt()
       );
-      setMessages(prev => [...prev, { id: newId(), role: 'assistant', text: reply }]);
+      // Hide the structured JSON markers (and the whitespace around them)
+      // from the visible bubble text.
+      const visibleText = reply.replace(/\s*__(FOOD|PLAN)_JSON__[\s\S]*?__END__\s*/g, '').trim();
+      setMessages(prev => [...prev, { id: newId(), role: 'assistant', text: visibleText || reply }]);
+
+      if (isTraining) {
+        const plan = extractTrainingPlanFromReply(reply);
+        if (plan) {
+          const newPlan: TrainingPlan = {
+            id: createId('plan'),
+            name: plan.name,
+            notes: plan.notes,
+            estimatedDurationMinutes: plan.estimatedDurationMinutes,
+            exercises: plan.exercises.map(ex => ({
+              id: createId('exercise'),
+              name: ex.name,
+              sets: ex.sets.map(s => ({ id: createId('plan-set'), reps: s.reps, weight: s.weight })),
+              exerciseType: ex.exerciseType,
+              met: null,
+              bodyweightLoadFactor: 0.7,
+            })),
+          };
+          await app.upsertPlan(newPlan);
+          setGeneratedPlan(plan);
+        }
+      } else {
+        const food = extractFoodFromReply(reply);
+        if (food) {
+          // Persist to the food library so it shows up in the Diet page with its own 添加 button.
+          if (!app.foodDb.some(f => f.name === food.name)) {
+            await app.replaceFoodDb([...app.foodDb, food]);
+          }
+          setGeneratedFood(food);
+        }
+      }
     } catch (e: any) {
       setError(e?.message || '请求失败，请重试');
       setInput(content);
@@ -167,10 +276,11 @@ export default function AiChatScreen({ navigation }: any) {
             <View style={styles.aiAvatar}>
               <Text style={styles.aiAvatarText}>AI</Text>
             </View>
-            <Text style={styles.setupTitle}>配置 AI 饮食助手</Text>
+            <Text style={styles.setupTitle}>{isTraining ? '配置 AI 训练助手' : '配置 AI 饮食助手'}</Text>
             <Text style={styles.setupSub}>
-              填入你自己的 DeepSeek API Key，即可在手机里问食物热量、碳蛋脂和一日三餐的搭配。
-              Key 只保存在本机，不会上传。
+              {isTraining
+                ? '填入你自己的 DeepSeek API Key，即可让 AI 帮你生成训练计划、优化动作安排、给出训练建议。Key 只保存在本机，不会上传。'
+                : '填入你自己的 DeepSeek API Key，即可在手机里问食物热量、碳蛋脂和一日三餐的搭配。Key 只保存在本机，不会上传。'}
             </Text>
 
             <Text style={styles.formLabel}>DeepSeek API Key</Text>
@@ -231,12 +341,14 @@ export default function AiChatScreen({ navigation }: any) {
                 <View style={styles.aiAvatar}>
                   <Text style={styles.aiAvatarText}>AI</Text>
                 </View>
-                <Text style={styles.emptyTitle}>今天想吃什么，问我就好</Text>
+                <Text style={styles.emptyTitle}>{isTraining ? '今天练什么，问我就好' : '今天想吃什么，问我就好'}</Text>
                 <Text style={styles.emptySub}>
-                  我能结合你的身体数据、目标摄入和今日已吃，帮你算热量、配碳蛋脂、安排三餐。
+                  {isTraining
+                    ? '我能结合你的身体数据、目标和计划库，帮你生成训练计划、优化动作安排。'
+                    : '我能结合你的身体数据、目标摄入和今日已吃，帮你算热量、配碳蛋脂、安排三餐。'}
                 </Text>
                 <View style={styles.quickWrap}>
-                  {QUICK_QUESTIONS.map(q => (
+                  {quickQuestions.map((q: string) => (
                     <PressableScale key={q} style={styles.quickChip} onPress={() => send(q)}>
                       <Text style={styles.quickChipText}>{q}</Text>
                     </PressableScale>
@@ -286,12 +398,40 @@ export default function AiChatScreen({ navigation }: any) {
             )}
           </ScrollView>
 
-          <View style={[styles.inputBar, { marginBottom: kb }]}>
+          {generatedFood && !isTraining && (
+            <View style={styles.foodGenCard}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.foodGenTitle}>已生成食物到食物库</Text>
+                <Text style={styles.foodGenMeta}>
+                  {generatedFood.name}｜{generatedFood.calories}千卡｜碳{generatedFood.carbs} 蛋{generatedFood.protein} 脂{generatedFood.fat}
+                </Text>
+              </View>
+              <PressableScale style={styles.foodGenBtn} onPress={goAddFood}>
+                <Text style={styles.foodGenBtnText}>去饮食页添加</Text>
+              </PressableScale>
+            </View>
+          )}
+
+          {generatedPlan && isTraining && (
+            <View style={styles.foodGenCard}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.foodGenTitle}>已生成训练计划到计划库</Text>
+                <Text style={styles.foodGenMeta}>
+                  {generatedPlan.name}｜{generatedPlan.exercises.length}个动作｜约{generatedPlan.estimatedDurationMinutes ?? '?'}分钟
+                </Text>
+              </View>
+              <PressableScale style={styles.foodGenBtn} onPress={goAddPlan}>
+                <Text style={styles.foodGenBtnText}>去训练页查看</Text>
+              </PressableScale>
+            </View>
+          )}
+
+          <View style={[styles.inputBar, { marginBottom: kb, paddingBottom: Math.max(Spacing.md, insets.bottom) }]}>
             <TextInput
               style={styles.chatInput}
               value={input}
               onChangeText={setInput}
-              placeholder="问食物热量、碳蛋脂或三餐搭配…"
+              placeholder={isTraining ? '问训练安排、动作优化，或让我直接生成计划…' : '问食物热量、碳蛋脂或三餐搭配…'}
               placeholderTextColor={Colors.textMuted}
               multiline
               maxLength={500}
@@ -399,6 +539,20 @@ const styles = StyleSheet.create({
     padding: Spacing.md, backgroundColor: Colors.surface,
     borderTopWidth: 1, borderTopColor: Colors.borderLight,
   },
+  foodGenCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: Colors.accentLight, marginHorizontal: Spacing.md, marginTop: Spacing.md,
+    borderRadius: BorderRadius.lg, padding: Spacing.md,
+    borderWidth: 1, borderColor: Colors.accentMuted,
+  },
+  foodGenTitle: { fontSize: 14, fontWeight: '600', color: Colors.textPrimary },
+  foodGenMeta: { fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
+  foodGenBtn: {
+    backgroundColor: Colors.accent, borderRadius: BorderRadius.md,
+    paddingHorizontal: 14, paddingVertical: 9, ...Shadow.button,
+  },
+  foodGenBtnText: { fontSize: 13, fontWeight: '600', color: '#fff' },
+
   chatInput: {
     flex: 1, borderWidth: 1, borderColor: Colors.border, borderRadius: 20,
     paddingHorizontal: 16, paddingVertical: 10, fontSize: 15, color: Colors.textPrimary,

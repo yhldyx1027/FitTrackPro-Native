@@ -74,6 +74,18 @@ export default function TrainingScreen({ navigation }: any) {
         )}
       </View>
 
+      {/* AI Training Assistant Entry */}
+      <PressableScale style={styles.aiEntry} onPress={() => navigation.navigate('AiChatPage', { mode: 'training' })}>
+        <View style={styles.aiEntryBadge}>
+          <Text style={styles.aiEntryBadgeText}>AI</Text>
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.aiEntryTitle}>AI 训练助手</Text>
+          <Text style={styles.aiEntrySub}>生成训练计划、优化动作安排</Text>
+        </View>
+        <Text style={styles.aiEntryArrow}>›</Text>
+      </PressableScale>
+
       {/* Plan Library */}
       <View style={styles.card}>
         <Text style={styles.cardTitle}>训练计划库</Text>
@@ -225,17 +237,17 @@ function PlanEditorModal({ visible, onClose, onSave, createBlankPlan }: {
                     placeholder="动作名称"
                     placeholderTextColor={Colors.textMuted}
                   />
+                </View>
+                <View style={styles.exHeaderActions}>
                   <PressableScale style={styles.miniBtn} onPress={() => toggleExpand(ex.id)}>
                     <Text style={styles.miniBtnText}>{expanded ? '收起' : '展开'}</Text>
                   </PressableScale>
-                  <View style={styles.exHeaderActions}>
-                    <PressableScale style={[styles.miniBtn, i === 0 && styles.miniBtnDisabled]} onPress={() => { const idx = plan.exercises.findIndex(e => e.id === ex.id); if (idx > 0) { [plan.exercises[idx], plan.exercises[idx - 1]] = [plan.exercises[idx - 1], plan.exercises[idx]]; refresh(); } }}>
-                      <Text style={styles.miniBtnText}>上移</Text>
-                    </PressableScale>
-                    <PressableScale style={[styles.miniBtn, i === plan.exercises.length - 1 && styles.miniBtnDisabled]} onPress={() => { const idx = plan.exercises.findIndex(e => e.id === ex.id); if (idx < plan.exercises.length - 1) { [plan.exercises[idx], plan.exercises[idx + 1]] = [plan.exercises[idx + 1], plan.exercises[idx]]; refresh(); } }}>
-                      <Text style={styles.miniBtnText}>下移</Text>
-                    </PressableScale>
-                  </View>
+                  <PressableScale style={[styles.miniBtn, i === 0 && styles.miniBtnDisabled]} onPress={() => { const idx = plan.exercises.findIndex(e => e.id === ex.id); if (idx > 0) { [plan.exercises[idx], plan.exercises[idx - 1]] = [plan.exercises[idx - 1], plan.exercises[idx]]; refresh(); } }}>
+                    <Text style={styles.miniBtnText}>上移</Text>
+                  </PressableScale>
+                  <PressableScale style={[styles.miniBtn, i === plan.exercises.length - 1 && styles.miniBtnDisabled]} onPress={() => { const idx = plan.exercises.findIndex(e => e.id === ex.id); if (idx < plan.exercises.length - 1) { [plan.exercises[idx], plan.exercises[idx + 1]] = [plan.exercises[idx + 1], plan.exercises[idx]]; refresh(); } }}>
+                    <Text style={styles.miniBtnText}>下移</Text>
+                  </PressableScale>
                 </View>
 
                 {expanded && (
@@ -479,6 +491,21 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: Colors.borderLight,
   },
   cardTitle: { ...Typography.title, marginBottom: 4 },
+
+  aiEntry: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: Colors.surface, borderRadius: BorderRadius.xl,
+    padding: Spacing.lg, marginBottom: Spacing.lg,
+    borderWidth: 1, borderColor: Colors.accentMuted, ...Shadow.card,
+  },
+  aiEntryBadge: {
+    width: 38, height: 38, borderRadius: 19, backgroundColor: Colors.accent,
+    justifyContent: 'center', alignItems: 'center', ...Shadow.button,
+  },
+  aiEntryBadgeText: { fontSize: 13, fontWeight: '700', color: '#fff', letterSpacing: -0.3 },
+  aiEntryTitle: { fontSize: 15, fontWeight: '600', color: Colors.textPrimary },
+  aiEntrySub: { fontSize: 12, color: Colors.textMuted, marginTop: 2 },
+  aiEntryArrow: { fontSize: 22, color: Colors.textMuted, marginRight: 4 },
   cardSub: { ...Typography.caption, marginBottom: Spacing.lg },
   emptyText: { ...Typography.caption, fontStyle: 'italic', textAlign: 'center', paddingVertical: Spacing.lg },
 
@@ -537,7 +564,8 @@ const styles = StyleSheet.create({
   },
   outlineBtnText: { fontSize: 15, fontWeight: '500', color: Colors.textSecondary },
   miniBtn: {
-    paddingHorizontal: 10, paddingVertical: 5, borderRadius: BorderRadius.sm,
+    flex: 1, alignItems: 'center', paddingHorizontal: 10, paddingVertical: 7,
+    borderRadius: BorderRadius.sm,
     borderWidth: 1, borderColor: Colors.borderLight, backgroundColor: Colors.surfaceHover,
   },
   miniBtnText: { fontSize: 12, fontWeight: '500', color: Colors.textSecondary },
@@ -601,7 +629,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8, paddingVertical: 6, fontSize: 14, fontWeight: '600',
     color: Colors.textPrimary, backgroundColor: Colors.surfaceHover,
   },
-  exHeaderActions: { flexDirection: 'row', gap: 6 },
+  exHeaderActions: { flexDirection: 'row', gap: 8, marginTop: 8 },
 
   // Type options
   typeGrid: { flexDirection: 'row', gap: 8 },

@@ -7,6 +7,7 @@ import {
   StatusBar, ActivityIndicator, View, Text, StyleSheet, Platform,
 } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
+import { getFocusedRouteNameFromRoute } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -145,11 +146,31 @@ function TabNavigator() {
         tabBarLabelStyle: { fontSize: 11, fontWeight: '600', marginTop: 2 },
       }}
     >
-      <Tab.Screen name="Dashboard" component={DashboardStack} options={{ tabBarLabel: '概览', tabBarIcon: ({ focused }) => <TabIcon label="览" focused={focused} /> }} />
-      <Tab.Screen name="Training" component={TrainingStack} options={{ tabBarLabel: '训练', tabBarIcon: ({ focused }) => <TabIcon label="训" focused={focused} /> }} />
-      <Tab.Screen name="Diet" component={DietStack} options={{ tabBarLabel: '饮食', tabBarIcon: ({ focused }) => <TabIcon label="食" focused={focused} /> }} />
-      <Tab.Screen name="History" component={HistoryStack} options={{ tabBarLabel: '记录', tabBarIcon: ({ focused }) => <TabIcon label="记" focused={focused} /> }} />
-      <Tab.Screen name="Settings" component={SettingsStack} options={{ tabBarLabel: '设置', tabBarIcon: ({ focused }) => <TabIcon label="设" focused={focused} /> }} />
+      {([
+        ['Dashboard', DashboardStack, '概览', '览'],
+        ['Training', TrainingStack, '训练', '训'],
+        ['Diet', DietStack, '饮食', '食'],
+        ['History', HistoryStack, '记录', '记'],
+        ['Settings', SettingsStack, '设置', '设'],
+      ] as const).map(([name, Comp, label, icon]) => (
+        <Tab.Screen
+          key={name}
+          name={name}
+          component={Comp}
+          options={({ route }: any) => {
+            const focused = getFocusedRouteNameFromRoute(route) ?? '';
+            // Full-screen the AI chat page so the input bar sits flush with the keyboard.
+            const hideTab = focused === 'AiChatPage';
+            return {
+              tabBarLabel: label,
+              tabBarIcon: ({ focused: f }: any) => <TabIcon label={icon} focused={f} />,
+              tabBarStyle: hideTab
+                ? { display: 'none' }
+                : { backgroundColor: Colors.surface, borderTopColor: Colors.borderLight, borderTopWidth: 1, height: 64, paddingBottom: 10, paddingTop: 8, ...Shadow.card },
+            };
+          }}
+        />
+      ))}
     </Tab.Navigator>
   );
 }

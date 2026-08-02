@@ -187,8 +187,8 @@ export default function SettingsScreen({ navigation }: any) {
 
       {/* AI Assistant */}
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>AI 饮食助手</Text>
-        <Text style={styles.cardSub}>用 DeepSeek 查询食物热量、碳蛋脂配置与三餐搭配。API Key 仅保存在本机。</Text>
+        <Text style={styles.cardTitle}>AI 助手</Text>
+        <Text style={styles.cardSub}>用 DeepSeek 查询食物热量、碳蛋脂，或生成/优化训练计划。API Key 仅保存在本机。</Text>
 
         <View style={styles.aiStatusRow}>
           <View style={[styles.aiStatusDot, ai ? styles.aiStatusDotOn : null]} />
@@ -200,9 +200,14 @@ export default function SettingsScreen({ navigation }: any) {
         </View>
 
         {ai && (
-          <PressableScale style={styles.primaryBtn} onPress={() => navigation.navigate('AiChatPage')}>
-            <Text style={styles.primaryBtnText}>打开 AI 饮食助手</Text>
-          </PressableScale>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <PressableScale style={[styles.primaryBtn, { flex: 1 }]} onPress={() => navigation.navigate('AiChatPage', { mode: 'diet' })}>
+              <Text style={styles.primaryBtnText}>AI 饮食助手</Text>
+            </PressableScale>
+            <PressableScale style={[styles.primaryBtn, { flex: 1 }]} onPress={() => navigation.navigate('AiChatPage', { mode: 'training' })}>
+              <Text style={styles.primaryBtnText}>AI 训练助手</Text>
+            </PressableScale>
+          </View>
         )}
 
         <PressableScale

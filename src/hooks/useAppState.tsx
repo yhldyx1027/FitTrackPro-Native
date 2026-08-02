@@ -6,7 +6,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import { AppState, AppStateStatus } from 'react-native';
 import {
   Profile, TrainingPlan, Workout, TrainingLog, FoodItem,
-  DietEntry, DietLog, WorkoutSet, Exercise,
+  DietEntry, DietLog, WorkoutSet, Exercise, WeightRecord,
 } from '../types';
 import {
   Calc, DEFAULT_PROFILE, DEFAULT_FOOD_DB, createId,
@@ -26,6 +26,7 @@ interface AppContextType {
   todayWorkout: Workout | null;
   historyTrainingLogs: TrainingLog[];
   historyDietLogs: DietLog[];
+  weightHistory: WeightRecord[];
   isTrainingDay: boolean;
   trainingCal: number;
   trainingVol: number;
@@ -64,6 +65,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [todayWorkout, setTodayWorkout] = useState<Workout | null>(null);
   const [historyTrainingLogs, setHistoryTrainingLogs] = useState<TrainingLog[]>([]);
   const [historyDietLogs, setHistoryDietLogs] = useState<DietLog[]>([]);
+  const [weightHistory, setWeightHistory] = useState<WeightRecord[]>([]);
 
   const today = getTodayKey();
 
@@ -80,7 +82,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // ---- Data Loading ----
 
   const refreshAll = useCallback(async () => {
-    const [p, pl, fdb, dietEntries, trLog, workout, trLogs, dietLogs] = await Promise.all([
+    const [p, pl, fdb, dietEntries, trLog, workout, trLogs, dietLogs, weights] = await Promise.all([
       Storage.loadProfile(),
       Storage.loadPlans(),
       Storage.loadFoodDb(),
@@ -89,6 +91,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       Storage.loadCurrentWorkout(today),
       Storage.loadTrainingLogs(),
       Storage.loadDietHistoryLogs(),
+      Storage.loadWeightHistory(),
     ]);
     setProfile(p || DEFAULT_PROFILE);
     setPlans(pl);
@@ -99,6 +102,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setTodayWorkout(workout);
     setHistoryTrainingLogs(trLogs);
     setHistoryDietLogs(dietLogs);
+    setWeightHistory(weights);
   }, [today]);
 
   // Initialize
@@ -286,7 +290,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const value: AppContextType = {
     ready, profile, plans, foodDb, todayDietEntries, todayTrainingLog,
     todayWorkout, historyTrainingLogs, historyDietLogs,
-    isTrainingDay, trainingCal, trainingVol,
+    weightHistory, isTrainingDay, trainingCal, trainingVol,
     refreshAll, updateProfile, upsertPlan, removePlan,
     startWorkoutFromPlan, updateWorkout, completeWorkout, discardWorkout,
     addDietEntry, removeDietEntry, replaceFoodDb, saveWeightRecord,

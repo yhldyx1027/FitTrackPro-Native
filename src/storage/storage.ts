@@ -172,6 +172,26 @@ export async function getLastWeight(): Promise<number | null> {
   } catch { return null; }
 }
 
+export async function loadWeightHistory(): Promise<WeightRecord[]> {
+  try {
+    const allKeys = await AsyncStorage.getAllKeys();
+    const weightKeys = allKeys
+      .filter(k => k.startsWith(key('weight_logs/')))
+      .sort();
+    const records: WeightRecord[] = [];
+    for (const k of weightKeys) {
+      const raw = await AsyncStorage.getItem(k);
+      if (raw) {
+        const data = JSON.parse(raw);
+        if (data && data.date && data.weight != null) {
+          records.push({ date: data.date, weight: data.weight });
+        }
+      }
+    }
+    return records;
+  } catch { return []; }
+}
+
 // ---- AI Settings ----
 
 export interface AiSettings {
