@@ -6,12 +6,14 @@ import React, { useState, useCallback } from 'react';
 import {
   View, Text, ScrollView, TextInput,
   StyleSheet, Modal, FlatList, StatusBar,
+  KeyboardAvoidingView, Platform, Alert,
 } from 'react-native';
 import { useApp } from '../hooks/useAppState';
 import { Colors, Spacing, BorderRadius, Shadow, Typography } from '../theme';
 import { Calc, toR, MEAL_LABELS, MEAL_TYPES, EMPTY_FOOD } from '../utils/calculations';
 import { FoodItem, DietEntry, MealType } from '../types';
 import PressableScale from '../components/PressableScale';
+import DecimalInput from '../components/DecimalInput';
 
 export default function DietScreen() {
   const app = useApp();
@@ -97,7 +99,7 @@ export default function DietScreen() {
 
         {/* Servings */}
         <Text style={styles.formLabel}>份数</Text>
-        <TextInput style={[styles.input, { width: 100 }]} value={servings} onChangeText={setServings} keyboardType="decimal-pad" placeholder="1" />
+        <TextInput style={[styles.input, { width: 100 }]} value={servings} onChangeText={setServings} keyboardType="numeric" placeholder="1" placeholderTextColor={Colors.textMuted} />
 
         {/* Full food library */}
         <Text style={[styles.formLabel, { marginTop: Spacing.lg }]}>食物库</Text>
@@ -183,39 +185,42 @@ function FoodEditorModal({ visible, onClose }: { visible: boolean; onClose: () =
   if (editing && editItem) {
     return (
       <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setEditing(false)}>
-        <View style={styles.modalContainer}>
+        <KeyboardAvoidingView style={styles.modalContainer} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <View style={styles.modalHeader}>
             <PressableScale onPress={() => setEditing(false)} style={styles.modalIconBtn}><Text style={styles.modalBack}>←</Text></PressableScale>
             <Text style={styles.modalTitle}>{editItem.name || '新食物'}</Text>
             <View style={{ width: 40 }} />
           </View>
-          <View style={styles.modalBody}>
+          <ScrollView style={styles.modalBody} contentContainerStyle={styles.foodEditBody} keyboardShouldPersistTaps="handled">
             <Text style={styles.formLabel}>名称</Text>
-            <TextInput style={styles.input} value={editItem.name} onChangeText={t => setEditItem({ ...editItem, name: t })} />
+            <TextInput style={styles.input} value={editItem.name} onChangeText={t => setEditItem({ ...editItem, name: t })} placeholder="例如 鸡胸肉" placeholderTextColor={Colors.textMuted} />
             <View style={{ flexDirection: 'row', gap: 10 }}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.formLabel}>热量（千卡）</Text>
-                <TextInput style={styles.input} value={String(editItem.calories)} onChangeText={t => setEditItem({ ...editItem, calories: Number(t) || 0 })} keyboardType="decimal-pad" />
+                <DecimalInput style={styles.input} value={editItem.calories} onValue={n => setEditItem({ ...editItem, calories: n ?? 0 })} />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.formLabel}>碳水（克）</Text>
-                <TextInput style={styles.input} value={String(editItem.carbs)} onChangeText={t => setEditItem({ ...editItem, carbs: Number(t) || 0 })} keyboardType="decimal-pad" />
+                <DecimalInput style={styles.input} value={editItem.carbs} onValue={n => setEditItem({ ...editItem, carbs: n ?? 0 })} />
               </View>
             </View>
             <View style={{ flexDirection: 'row', gap: 10 }}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.formLabel}>蛋白质（克）</Text>
-                <TextInput style={styles.input} value={String(editItem.protein)} onChangeText={t => setEditItem({ ...editItem, protein: Number(t) || 0 })} keyboardType="decimal-pad" />
+                <DecimalInput style={styles.input} value={editItem.protein} onValue={n => setEditItem({ ...editItem, protein: n ?? 0 })} />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.formLabel}>脂肪（克）</Text>
-                <TextInput style={styles.input} value={String(editItem.fat)} onChangeText={t => setEditItem({ ...editItem, fat: Number(t) || 0 })} keyboardType="decimal-pad" />
+                <DecimalInput style={styles.input} value={editItem.fat} onValue={n => setEditItem({ ...editItem, fat: n ?? 0 })} />
               </View>
             </View>
             <PressableScale
               style={styles.primaryBtn}
               onPress={() => {
-                if (!editItem.name.trim()) return;
+                if (!editItem.name.trim()) {
+                  Alert.alert('提示', '请先填写食物名称');
+                  return;
+                }
                 const idx = items.findIndex(f => f.name === (editItem as any)._origName);
                 if (idx >= 0) {
                   const updated = [...items];
@@ -229,21 +234,21 @@ function FoodEditorModal({ visible, onClose }: { visible: boolean; onClose: () =
             >
               <Text style={styles.primaryBtnText}>保存</Text>
             </PressableScale>
-          </View>
-        </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
       </Modal>
     );
   }
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <View style={styles.modalContainer}>
+      <KeyboardAvoidingView style={styles.modalContainer} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <View style={styles.modalHeader}>
           <PressableScale onPress={onClose} style={styles.modalIconBtn}><Text style={styles.modalBack}>←</Text></PressableScale>
           <Text style={styles.modalTitle}>食物库管理</Text>
           <PressableScale onPress={saveAll} style={styles.modalIconBtn}><Text style={styles.modalSave}>完成</Text></PressableScale>
         </View>
-        <ScrollView style={styles.modalBody}>
+        <ScrollView style={styles.modalBody} keyboardShouldPersistTaps="handled">
           <PressableScale style={styles.outlineBtn} onPress={() => { setEditItem({ ...EMPTY_FOOD, name: '' }); setEditing(true); }}>
             <Text style={styles.outlineBtnText}>+ 新建食物</Text>
           </PressableScale>
@@ -262,7 +267,7 @@ function FoodEditorModal({ visible, onClose }: { visible: boolean; onClose: () =
             </View>
           ))}
         </ScrollView>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -392,4 +397,5 @@ const styles = StyleSheet.create({
   modalTitle: { fontSize: 16, fontWeight: '600', color: Colors.textPrimary },
   modalSave: { fontSize: 15, fontWeight: '600', color: Colors.accent },
   modalBody: { flex: 1, padding: Spacing.lg },
+  foodEditBody: { paddingBottom: 48, gap: 4 },
 });

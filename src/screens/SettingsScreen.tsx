@@ -12,6 +12,7 @@ import { Colors, Spacing, BorderRadius, Shadow, Typography } from '../theme';
 import { fmtNum, parseNum, GOAL_LABELS, GENDER_LABELS } from '../utils/calculations';
 import { Gender, Goal } from '../types';
 import PressableScale from '../components/PressableScale';
+import DecimalInput from '../components/DecimalInput';
 
 export default function SettingsScreen() {
   const app = useApp();
@@ -117,7 +118,7 @@ export default function SettingsScreen() {
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.formLabel}>活动系数</Text>
-                <TextInput style={styles.input} value={fmtNum(draft.activityFactor)} onChangeText={t => handleUpdate('activityFactor', t)} placeholder="1.375" keyboardType="decimal-pad" />
+                <DecimalInput style={styles.input} value={draft.activityFactor} onValue={n => setDraft(d => ({ ...d, activityFactor: n }))} placeholder="1.375" />
                 <Text style={styles.formHint}>久坐1.2  轻度1.375  中度1.55  高强度1.725+</Text>
               </View>
             </View>

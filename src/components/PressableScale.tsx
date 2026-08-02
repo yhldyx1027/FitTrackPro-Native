@@ -14,6 +14,7 @@ type Props = PressableProps & {
 
 export default function PressableScale({ children, style, pressedScale = 0.975, ...rest }: Props) {
   const scale = useRef(new Animated.Value(1)).current;
+  const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
   const animateTo = (value: number) => {
     Animated.spring(scale, {
@@ -26,14 +27,13 @@ export default function PressableScale({ children, style, pressedScale = 0.975, 
   };
 
   return (
-    <Animated.View style={[{ transform: [{ scale }] }, style]}>
-      <Pressable
-        {...rest}
-        onPressIn={(e) => { animateTo(pressedScale); rest.onPressIn?.(e); }}
-        onPressOut={(e) => { animateTo(1); rest.onPressOut?.(e); }}
-      >
-        {children}
-      </Pressable>
-    </Animated.View>
+    <AnimatedPressable
+      {...rest}
+      style={[style, { transform: [{ scale }] }]}
+      onPressIn={(e) => { animateTo(pressedScale); rest.onPressIn?.(e); }}
+      onPressOut={(e) => { animateTo(1); rest.onPressOut?.(e); }}
+    >
+      {children}
+    </AnimatedPressable>
   );
 }

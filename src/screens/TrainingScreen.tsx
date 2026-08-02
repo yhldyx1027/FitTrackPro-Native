@@ -6,12 +6,14 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, ScrollView, TextInput,
   StyleSheet, Modal, AppState, AppStateStatus, StatusBar, Alert,
+  KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { useApp } from '../hooks/useAppState';
 import { Colors, Spacing, BorderRadius, Shadow, Typography } from '../theme';
 import { toR, fmtNum, parseNum, createId } from '../utils/calculations';
 import { TrainingPlan, Exercise, ExerciseType, WorkoutSet, PlanSet } from '../types';
 import PressableScale from '../components/PressableScale';
+import DecimalInput from '../components/DecimalInput';
 
 // ---- Exercise type options ----
 const exerciseTypes: { v: ExerciseType; l: string }[] = [
@@ -182,7 +184,7 @@ function PlanEditorModal({ visible, onClose, onSave, createBlankPlan }: {
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <View style={styles.modalContainer}>
+      <KeyboardAvoidingView style={styles.modalContainer} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <View style={styles.modalHeader}>
           <PressableScale onPress={onClose} style={styles.modalIconBtn}><Text style={styles.modalBack}>←</Text></PressableScale>
           <Text style={styles.modalTitle}>{editingPlan ? '编辑计划' : '新建计划'}</Text>
@@ -262,12 +264,12 @@ function PlanEditorModal({ visible, onClose, onSave, createBlankPlan }: {
                       <View style={styles.metRow}>
                         <View style={{ flex: 1 }}>
                           <Text style={styles.formLabel}>MET 值</Text>
-                          <TextInput style={styles.input} value={fmtNum(ex.met)} onChangeText={t => { ex.met = parseNum(t); refresh(); }} placeholder="默认自动" keyboardType="decimal-pad" placeholderTextColor={Colors.textMuted} />
+                          <DecimalInput style={styles.input} value={ex.met} onValue={n => { ex.met = n; refresh(); }} placeholder="默认自动" />
                         </View>
                         {ex.exerciseType === 'bodyweight' && (
                           <View style={{ flex: 1 }}>
                             <Text style={styles.formLabel}>受力系数</Text>
-                            <TextInput style={styles.input} value={fmtNum(ex.bodyweightLoadFactor)} onChangeText={t => { ex.bodyweightLoadFactor = parseNum(t) ?? 0.7; refresh(); }} keyboardType="decimal-pad" placeholder="0.7" placeholderTextColor={Colors.textMuted} />
+                            <DecimalInput style={styles.input} value={ex.bodyweightLoadFactor} onValue={n => { ex.bodyweightLoadFactor = n ?? 0.7; refresh(); }} placeholder="0.7" />
                           </View>
                         )}
                       </View>
@@ -314,7 +316,7 @@ function PlanEditorModal({ visible, onClose, onSave, createBlankPlan }: {
             <Text style={styles.addExText}>+ 添加动作</Text>
           </PressableScale>
         </ScrollView>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -402,7 +404,7 @@ function WorkoutModal({ visible, onClose }: { visible: boolean; onClose: () => v
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={handleClose}>
-      <View style={styles.modalContainer}>
+      <KeyboardAvoidingView style={styles.modalContainer} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <View style={styles.modalHeader}>
           <PressableScale onPress={handleClose} style={styles.modalIconBtn}><Text style={styles.modalBack}>←</Text></PressableScale>
           <Text style={styles.modalTitle}>{todayWorkout.sourcePlanName}</Text>
@@ -460,7 +462,7 @@ function WorkoutModal({ visible, onClose }: { visible: boolean; onClose: () => v
             <Text style={styles.outlineBtnText}>取消训练</Text>
           </PressableScale>
         </ScrollView>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
