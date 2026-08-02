@@ -33,6 +33,9 @@ yarn-error.*
 # local env files
 .env*.local
 
+# release apks
+release/
+
 # typescript
 *.tsbuildinfo
 
