@@ -172,6 +172,24 @@ export async function getLastWeight(): Promise<number | null> {
   } catch { return null; }
 }
 
+// ---- AI Settings ----
+
+export interface AiSettings {
+  apiKey: string;
+  model: string;
+}
+
+export async function loadAiSettings(): Promise<AiSettings | null> {
+  try {
+    const raw = await AsyncStorage.getItem(key('ai_settings'));
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+
+export async function saveAiSettings(settings: AiSettings): Promise<void> {
+  await AsyncStorage.setItem(key('ai_settings'), JSON.stringify(settings));
+}
+
 // ---- Maintenance ----
 
 export async function clearHistory(): Promise<void> {

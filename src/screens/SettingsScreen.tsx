@@ -2,7 +2,7 @@
 // FitTrack Pro - Settings Screen
 // ============================================================
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View, Text, ScrollView, TextInput,
   StyleSheet, Alert,
@@ -13,8 +13,10 @@ import { fmtNum, parseNum, GOAL_LABELS, GENDER_LABELS } from '../utils/calculati
 import { Gender, Goal } from '../types';
 import PressableScale from '../components/PressableScale';
 import DecimalInput from '../components/DecimalInput';
+import { AI_MODELS, DEFAULT_AI_MODEL, AiSettings } from '../services/ai';
+import { loadAiSettings, saveAiSettings } from '../storage/storage';
 
-export default function SettingsScreen() {
+export default function SettingsScreen({ navigation }: any) {
   const app = useApp();
   if (!app.ready) return null;
 
@@ -23,9 +25,44 @@ export default function SettingsScreen() {
   const [saved, setSaved] = useState(!!(profile.height && profile.weight));
   const [msg, setMsg] = useState('');
 
+  // AI assistant configuration
+  const [ai, setAi] = useState<AiSettings | null>(null);
+  const [aiEditor, setAiEditor] = useState(false);
+  const [aiKey, setAiKey] = useState('');
+  const [aiModel, setAiModel] = useState(DEFAULT_AI_MODEL);
+  const [aiMsg, setAiMsg] = useState('');
+
+  useEffect(() => {
+    (async () => {
+      const s = await loadAiSettings();
+      setAi(s);
+      if (s) {
+        setAiKey(s.apiKey);
+        setAiModel(s.model);
+      }
+    })();
+  }, []);
+
   const showMsg = (text: string) => {
     setMsg(text);
     setTimeout(() => setMsg(''), 2400);
+  };
+
+  const showAiMsg = (text: string) => {
+    setAiMsg(text);
+    setTimeout(() => setAiMsg(''), 2400);
+  };
+
+  const handleSaveAi = async () => {
+    const key = aiKey.trim();
+    if (!key) {
+      showAiMsg('请先粘贴 DeepSeek API Key');
+      return;
+    }
+    await saveAiSettings({ apiKey: key, model: aiModel });
+    setAi({ apiKey: key, model: aiModel });
+    setAiEditor(false);
+    showAiMsg('AI 配置已保存');
   };
 
   const handleUpdate = (field: string, value: string) => {
@@ -148,6 +185,75 @@ export default function SettingsScreen() {
         )}
       </View>
 
+      {/* AI Assistant */}
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>AI 饮食助手</Text>
+        <Text style={styles.cardSub}>用 DeepSeek 查询食物热量、碳蛋脂配置与三餐搭配。API Key 仅保存在本机。</Text>
+
+        <View style={styles.aiStatusRow}>
+          <View style={[styles.aiStatusDot, ai ? styles.aiStatusDotOn : null]} />
+          <Text style={styles.aiStatusText}>
+            {ai
+              ? `已配置 · ${AI_MODELS.find(m => m.value === ai.model)?.label ?? ai.model}`
+              : '未配置 API Key'}
+          </Text>
+        </View>
+
+        {ai && (
+          <PressableScale style={styles.primaryBtn} onPress={() => navigation.navigate('AiChatPage')}>
+            <Text style={styles.primaryBtnText}>打开 AI 饮食助手</Text>
+          </PressableScale>
+        )}
+
+        <PressableScale
+          style={styles.outlineBtn}
+          onPress={() => setAiEditor(v => !v)}
+        >
+          <Text style={styles.outlineBtnText}>
+            {aiEditor ? '收起配置' : ai ? '修改 API Key / 模型' : '配置 API Key'}
+          </Text>
+        </PressableScale>
+
+        {aiMsg !== '' && (
+          <View style={styles.aiMsgBanner}>
+            <Text style={styles.aiMsgText}>{aiMsg}</Text>
+          </View>
+        )}
+
+        {aiEditor && (
+          <View>
+            <Text style={styles.formLabel}>DeepSeek API Key</Text>
+            <TextInput
+              style={styles.input}
+              value={aiKey}
+              onChangeText={setAiKey}
+              placeholder="sk-…"
+              placeholderTextColor={Colors.textMuted}
+              autoCapitalize="none"
+              autoCorrect={false}
+              secureTextEntry
+            />
+
+            <Text style={styles.formLabel}>模型</Text>
+            <View style={styles.chipRow}>
+              {AI_MODELS.map(m => (
+                <PressableScale
+                  key={m.value}
+                  style={[styles.chip, aiModel === m.value && styles.chipActive]}
+                  onPress={() => setAiModel(m.value)}
+                >
+                  <Text style={[styles.chipText, aiModel === m.value && styles.chipTextActive]}>{m.label}</Text>
+                </PressableScale>
+              ))}
+            </View>
+
+            <PressableScale style={styles.primaryBtn} onPress={handleSaveAi}>
+              <Text style={styles.primaryBtnText}>保存 AI 配置</Text>
+            </PressableScale>
+          </View>
+        )}
+      </View>
+
       {/* Storage */}
       <View style={styles.card}>
         <Text style={styles.cardTitle}>本地存储</Text>
@@ -243,4 +349,18 @@ const styles = StyleSheet.create({
     padding: Spacing.md, marginBottom: Spacing.md, alignItems: 'center',
   },
   storagePathText: { fontSize: 12, color: Colors.textMuted, fontFamily: 'monospace' },
+
+  aiStatusRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: Colors.surfaceHover, borderRadius: BorderRadius.md,
+    paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, marginBottom: Spacing.md,
+  },
+  aiStatusDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: Colors.border },
+  aiStatusDotOn: { backgroundColor: Colors.success },
+  aiStatusText: { fontSize: 13, fontWeight: '500', color: Colors.textSecondary },
+  aiMsgBanner: {
+    backgroundColor: Colors.accentLight, paddingVertical: Spacing.sm, paddingHorizontal: Spacing.md,
+    borderRadius: BorderRadius.md, marginTop: Spacing.md,
+  },
+  aiMsgText: { fontSize: 13, fontWeight: '500', color: Colors.accent, textAlign: 'center' },
 });

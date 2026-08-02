@@ -15,7 +15,7 @@ import { FoodItem, DietEntry, MealType } from '../types';
 import PressableScale from '../components/PressableScale';
 import DecimalInput from '../components/DecimalInput';
 
-export default function DietScreen() {
+export default function DietScreen({ navigation }: any) {
   const app = useApp();
   if (!app.ready) return null;
 
@@ -66,6 +66,18 @@ export default function DietScreen() {
           <Text style={styles.heroMeta}>千卡 / 当前</Text>
         </View>
       </View>
+
+      {/* AI Assistant Entry */}
+      <PressableScale style={styles.aiEntry} onPress={() => navigation.navigate('AiChatPage')}>
+        <View style={styles.aiEntryBadge}>
+          <Text style={styles.aiEntryBadgeText}>AI</Text>
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.aiEntryTitle}>AI 饮食助手</Text>
+          <Text style={styles.aiEntrySub}>问热量、配碳蛋脂、安排三餐</Text>
+        </View>
+        <Text style={styles.aiEntryArrow}>›</Text>
+      </PressableScale>
 
       {/* Progress */}
       <View style={styles.card}>
@@ -310,6 +322,21 @@ const styles = StyleSheet.create({
   heroLabel: { fontSize: 13, color: Colors.textMuted, marginBottom: 8 },
   heroValue: { fontSize: 34, fontWeight: '700', color: Colors.textPrimary, fontVariant: ['tabular-nums'] as any, letterSpacing: -0.8 },
   heroMeta: { fontSize: 12, color: Colors.textMuted, marginTop: 4 },
+
+  aiEntry: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: Colors.surface, borderRadius: BorderRadius.xl,
+    padding: Spacing.lg, marginBottom: Spacing.lg,
+    borderWidth: 1, borderColor: Colors.accentMuted, ...Shadow.card,
+  },
+  aiEntryBadge: {
+    width: 38, height: 38, borderRadius: 19, backgroundColor: Colors.accent,
+    justifyContent: 'center', alignItems: 'center', ...Shadow.button,
+  },
+  aiEntryBadgeText: { fontSize: 13, fontWeight: '700', color: '#fff', letterSpacing: -0.3 },
+  aiEntryTitle: { fontSize: 15, fontWeight: '600', color: Colors.textPrimary },
+  aiEntrySub: { fontSize: 12, color: Colors.textMuted, marginTop: 2 },
+  aiEntryArrow: { fontSize: 22, color: Colors.textMuted, marginRight: 4 },
 
   card: {
     backgroundColor: Colors.surface, borderRadius: BorderRadius.xxl,

@@ -9,6 +9,7 @@
 - **饮食记录**：按早餐/午餐/晚餐/加餐记录食物，支持份数与自定义食物库；训练日/休息日自动切换营养建议
 - **历史记录**：日历视图按日查看训练与饮食记录
 - **身体设置**：身高/体重/年龄/性别/目标（减脂/维持/增肌）/活动系数，实时计算 BMR、TDEE 与建议摄入
+- **AI 饮食助手**：接入 DeepSeek，可在手机里直接询问食物热量、碳蛋脂配置与三餐搭配；回答会结合你的身体数据、目标摄入与今日已吃（API Key 仅保存在本机，不会上传）
 
 ## 技术栈
 
@@ -16,6 +17,7 @@
 - React Navigation（Bottom Tabs + Native Stack）
 - AsyncStorage 本地持久化（SQLite）
 - react-native-svg（仪表盘圆盘）
+- DeepSeek Chat API（OpenAI 兼容接口，用户自备 API Key）
 
 ## 快速开始
 
@@ -31,10 +33,11 @@ npx expo start --dev-client
 ```
 ├── App.tsx                    # 入口与导航（5 Tab + 子页面 Stack）
 ├── src/
-│   ├── screens/               # 概览/训练/饮食/记录/设置
+│   ├── screens/               # 概览/训练/饮食/记录/设置/AI 聊天
 │   ├── components/            # 按压反馈、滑动返回等通用组件
 │   ├── hooks/useAppState.tsx  # 全局状态与业务动作
 │   ├── storage/storage.ts     # AsyncStorage 持久化层
+│   ├── services/ai.ts         # DeepSeek 对话服务与个性化饮食上下文
 │   ├── utils/calculations.ts  # BMR/TDEE/宏量/训练消耗等计算
 │   ├── theme/index.ts         # 配色/间距/排版/阴影
 │   └── types/index.ts

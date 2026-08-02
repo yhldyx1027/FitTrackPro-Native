@@ -19,6 +19,7 @@ import TrainingScreen from './src/screens/TrainingScreen';
 import DietScreen from './src/screens/DietScreen';
 import HistoryScreen from './src/screens/HistoryScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
+import AiChatScreen from './src/screens/AiChatScreen';
 import SwipeBackView from './src/components/SwipeBackView';
 
 const TOP_OFFSET = Platform.OS === 'android' ? (StatusBar.currentHeight ?? 44) + 8 : 0;
@@ -47,6 +48,7 @@ const SwipeTraining = withSwipeBack(TrainingScreen);
 const SwipeHistory = withSwipeBack(HistoryScreen);
 const SwipeSettings = withSwipeBack(SettingsScreen);
 const SwipeDashboard = withSwipeBack(DashboardScreen);
+const SwipeAiChat = withSwipeBack(AiChatScreen);
 
 function TabIcon({ label, focused }: { label: string; focused: boolean }) {
   return (
@@ -71,6 +73,7 @@ function DashboardStack() {
       <S.Screen name="TrainingPage" component={SwipeTraining} options={{ title: '训练', headerBackTitle: '返回' }} />
       <S.Screen name="HistoryPage" component={SwipeHistory} options={{ title: '历史记录', headerBackTitle: '返回' }} />
       <S.Screen name="SettingsPage" component={SwipeSettings} options={{ title: '设置', headerBackTitle: '返回' }} />
+      <S.Screen name="AiChatPage" component={SwipeAiChat} options={{ title: 'AI 饮食助手', headerBackTitle: '返回' }} />
     </S.Navigator>
   );
 }
@@ -84,6 +87,7 @@ function TrainingStack() {
       <S.Screen name="DashboardPage" component={SwipeDashboard} options={{ title: '概览', headerBackTitle: '返回' }} />
       <S.Screen name="HistoryPage" component={SwipeHistory} options={{ title: '历史记录', headerBackTitle: '返回' }} />
       <S.Screen name="SettingsPage" component={SwipeSettings} options={{ title: '设置', headerBackTitle: '返回' }} />
+      <S.Screen name="AiChatPage" component={SwipeAiChat} options={{ title: 'AI 饮食助手', headerBackTitle: '返回' }} />
     </S.Navigator>
   );
 }
@@ -97,6 +101,7 @@ function DietStack() {
       <S.Screen name="DashboardPage" component={SwipeDashboard} options={{ title: '概览', headerBackTitle: '返回' }} />
       <S.Screen name="HistoryPage" component={SwipeHistory} options={{ title: '历史记录', headerBackTitle: '返回' }} />
       <S.Screen name="SettingsPage" component={SwipeSettings} options={{ title: '设置', headerBackTitle: '返回' }} />
+      <S.Screen name="AiChatPage" component={SwipeAiChat} options={{ title: 'AI 饮食助手', headerBackTitle: '返回' }} />
     </S.Navigator>
   );
 }
@@ -110,6 +115,7 @@ function HistoryStack() {
       <S.Screen name="TrainingPage" component={SwipeTraining} options={{ title: '训练', headerBackTitle: '返回' }} />
       <S.Screen name="DashboardPage" component={SwipeDashboard} options={{ title: '概览', headerBackTitle: '返回' }} />
       <S.Screen name="SettingsPage" component={SwipeSettings} options={{ title: '设置', headerBackTitle: '返回' }} />
+      <S.Screen name="AiChatPage" component={SwipeAiChat} options={{ title: 'AI 饮食助手', headerBackTitle: '返回' }} />
     </S.Navigator>
   );
 }
@@ -123,6 +129,7 @@ function SettingsStack() {
       <S.Screen name="TrainingPage" component={SwipeTraining} options={{ title: '训练', headerBackTitle: '返回' }} />
       <S.Screen name="DashboardPage" component={SwipeDashboard} options={{ title: '概览', headerBackTitle: '返回' }} />
       <S.Screen name="HistoryPage" component={SwipeHistory} options={{ title: '历史记录', headerBackTitle: '返回' }} />
+      <S.Screen name="AiChatPage" component={SwipeAiChat} options={{ title: 'AI 饮食助手', headerBackTitle: '返回' }} />
     </S.Navigator>
   );
 }
