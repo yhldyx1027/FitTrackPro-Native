@@ -124,7 +124,7 @@ export default function DashboardScreen({ navigation }: any) {
             })}
           </Svg>
           <View style={styles.ringsCenter}>
-            <Text style={styles.ringsCenterLabel}>今日摄入</Text>
+            <Text style={styles.ringsCenterLabel}>建议摄入</Text>
             <View style={styles.ringsCenterValueRow}>
               <Text style={styles.ringsPercent}>{toR(m.consumedCalories)}</Text>
               <Text style={styles.ringsUnit}>千卡</Text>
@@ -177,7 +177,7 @@ export default function DashboardScreen({ navigation }: any) {
       <View style={styles.statRow}>
         <StatCard label="基础代谢" value={`${toR(m.bmr)} 千卡`} color={Colors.accent} fill={m.tdee > 0 ? Math.min(m.bmr / m.tdee, 1) : 0} />
         <StatCard label="全天消耗" value={`${toR(m.tdee)} 千卡`} color={Colors.warning} />
-        <StatCard label="已摄入" value={`${toR(m.consumedCalories)} 千卡`} color={Colors.info} fill={m.recommendedCalories > 0 ? Math.min(m.consumedCalories / m.recommendedCalories, 1) : 0} />
+        <StatCard label="今日摄入" value={`${toR(m.consumedCalories)} 千卡`} color={Colors.info} fill={m.recommendedCalories > 0 ? Math.min(m.consumedCalories / m.recommendedCalories, 1) : 0} />
       </View>
 
       {/* Quick Actions */}

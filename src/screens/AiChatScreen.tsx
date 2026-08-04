@@ -9,7 +9,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, ScrollView, TextInput,
   StyleSheet, ActivityIndicator, KeyboardAvoidingView, Platform, Keyboard,
-  Dimensions, PixelRatio,
+  Dimensions, PixelRatio, Modal,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRoute } from '@react-navigation/native';
@@ -21,7 +21,11 @@ import {
   chatWithDeepSeek, extractFoodFromReply, extractTrainingPlanFromReply,
   buildAiSystemPrompt, buildTrainingSystemPrompt, DEFAULT_AI_MODEL, AI_MODELS,
 } from '../services/ai';
-import { loadAiSettings, saveAiSettings } from '../storage/storage';
+import {
+  loadAiSettings, saveAiSettings,
+  loadAiConversations, saveAiConversations,
+  AiConversation,
+} from '../storage/storage';
 import { createId } from '../utils/calculations';
 import { TrainingPlan } from '../types';
 
@@ -34,9 +38,10 @@ interface ChatMsg {
 const DIET_QUICK_QUESTIONS = [
   '鸡胸肉每100克的营养？',
   '我吃了200克鸡胸肉和一碗米饭，帮我算热量',
+  '记录一下我中午吃了半只鸡和一碗面',
+  '我刚吃了一个汉堡和一份薯条，算算热量',
   '帮我安排今天的一日三餐',
   '训练日碳水和蛋白质怎么配',
-  '现在还能吃多少热量？',
 ];
 
 const TRAINING_QUICK_QUESTIONS = [
@@ -74,6 +79,9 @@ export default function AiChatScreen({ navigation }: any) {
   const [kb, setKb] = useState(0);
   const [generatedFood, setGeneratedFood] = useState<ParsedFood | null>(null);
   const [generatedPlan, setGeneratedPlan] = useState<GeneratedTrainingPlan | null>(null);
+  const [conversations, setConversations] = useState<AiConversation[]>([]);
+  const [activeConvId, setActiveConvId] = useState<string | null>(null);
+  const [historyVisible, setHistoryVisible] = useState(false);
 
   const scrollRef = useRef<ScrollView>(null);
   const insets = useSafeAreaInsets();
@@ -98,27 +106,22 @@ export default function AiChatScreen({ navigation }: any) {
 
   useEffect(() => {
     (async () => {
-      const s = await loadAiSettings();
+      const [s, convs] = await Promise.all([loadAiSettings(), loadAiConversations(mode)]);
       setSettings(s);
+      setConversations(convs);
       if (s) {
         setApiKey(s.apiKey);
         setModel(s.model);
       }
+      // Restore the most recent conversation (stored newest-first).
+      const last = convs[0];
+      if (last && last.messages.length > 0) {
+        setMessages(last.messages.map(m => ({ id: m.id, role: m.role, text: m.text })));
+        setActiveConvId(last.id);
+      }
       setLoaded(true);
     })();
-  }, []);
-
-  useEffect(() => {
-    navigation.setOptions({
-      title: isTraining ? 'AI 训练助手' : 'AI 饮食助手',
-      headerRight: () =>
-        messages.length > 0 ? (
-          <PressableScale onPress={() => setMessages([])} style={styles.clearBtn}>
-            <Text style={styles.clearBtnText}>清空</Text>
-          </PressableScale>
-        ) : null,
-    });
-  }, [navigation, messages.length, isTraining]);
+  }, [mode]);
 
   const showSetupMsg = (text: string) => {
     setSetupMsg(text);
@@ -192,18 +195,101 @@ export default function AiChatScreen({ navigation }: any) {
     return buildAiSystemPrompt(dctx);
   };
 
+  const fmtDate = (ts: number) => {
+    const d = new Date(ts);
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mi = String(d.getMinutes()).padStart(2, '0');
+    return `${mm}-${dd} ${hh}:${mi}`;
+  };
+
+  const persistConvs = async (next: AiConversation[]) => {
+    setConversations(next);
+    await saveAiConversations(mode, next);
+  };
+
+  const handleClear = async () => {
+    setMessages([]);
+    setGeneratedFood(null);
+    setGeneratedPlan(null);
+    if (!activeConvId) return;
+    const next = conversations.filter(c => c.id !== activeConvId);
+    setActiveConvId(null);
+    await persistConvs(next);
+  };
+
+  const handleNewConversation = async () => {
+    const conv: AiConversation = {
+      id: createId('conv'),
+      mode,
+      title: '',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      messages: [],
+    };
+    setMessages([]);
+    setGeneratedFood(null);
+    setGeneratedPlan(null);
+    setActiveConvId(conv.id);
+    setHistoryVisible(false);
+    await persistConvs([conv, ...conversations]);
+  };
+
+  const handleOpenConversation = async (conv: AiConversation) => {
+    setMessages(conv.messages.map(m => ({ id: m.id, role: m.role, text: m.text })));
+    setActiveConvId(conv.id);
+    setGeneratedFood(null);
+    setGeneratedPlan(null);
+    setHistoryVisible(false);
+    const next = conversations.map(c =>
+      c.id === conv.id ? { ...c, updatedAt: Date.now() } : c
+    );
+    await persistConvs(next);
+  };
+
+  useEffect(() => {
+    navigation.setOptions({
+      title: isTraining ? 'AI 训练助手' : 'AI 饮食助手',
+      headerRight: () => (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16, marginRight: 92 }}>
+          {messages.length > 0 && (
+            <PressableScale onPress={handleClear} style={styles.clearBtn}>
+              <Text style={styles.clearBtnText}>清空</Text>
+            </PressableScale>
+          )}
+          <PressableScale onPress={() => setHistoryVisible(true)} style={styles.clearBtn}>
+            <Text style={styles.clearBtnText}>历史</Text>
+          </PressableScale>
+        </View>
+      ),
+    });
+  }, [navigation, messages.length, isTraining, handleClear]);
+
   const send = async (raw?: string) => {
     const content = (raw ?? input).trim();
     if (!content || loading || !settings) return;
 
     const userMsg: ChatMsg = { id: newId(), role: 'user', text: content };
     const history = messages.map(m => ({ role: m.role, content: m.text }));
+    const baseMessages = messages;
     setMessages(prev => [...prev, userMsg]);
     setInput('');
     setError('');
     setGeneratedFood(null);
     setGeneratedPlan(null);
     setLoading(true);
+
+    let convId = activeConvId;
+    if (!convId) {
+      // First message of a brand-new conversation.
+      convId = createId('conv');
+      const conv: AiConversation = {
+        id: convId, mode, title: '', createdAt: Date.now(), updatedAt: Date.now(), messages: [],
+      };
+      await persistConvs([conv, ...conversations]);
+      setActiveConvId(convId);
+    }
 
     try {
       const reply = await chatWithDeepSeek(
@@ -215,7 +301,9 @@ export default function AiChatScreen({ navigation }: any) {
       // Hide the structured JSON markers (and the whitespace around them)
       // from the visible bubble text.
       const visibleText = reply.replace(/\s*__(FOOD|PLAN)_JSON__[\s\S]*?__END__\s*/g, '').trim();
-      setMessages(prev => [...prev, { id: newId(), role: 'assistant', text: visibleText || reply }]);
+      const assistantMsg: ChatMsg = { id: newId(), role: 'assistant', text: visibleText || reply };
+      const finalMessages = [...baseMessages, userMsg, assistantMsg];
+      setMessages(finalMessages);
 
       if (isTraining) {
         const plan = extractTrainingPlanFromReply(reply);
@@ -247,6 +335,21 @@ export default function AiChatScreen({ navigation }: any) {
           setGeneratedFood(food);
         }
       }
+
+      // Persist the conversation.
+      const title = userMsg.text.length > 18 ? userMsg.text.slice(0, 18) + '…' : userMsg.text;
+      const updated = conversations.map(c =>
+        c.id === convId
+          ? { ...c, title: c.title || title, updatedAt: Date.now(), messages: finalMessages }
+          : c
+      );
+      if (!updated.some(c => c.id === convId)) {
+        updated.push({
+          id: convId as string, mode, title, createdAt: Date.now(), updatedAt: Date.now(),
+          messages: finalMessages,
+        });
+      }
+      await persistConvs(updated);
     } catch (e: any) {
       setError(e?.message || '请求失败，请重试');
       setInput(content);
@@ -445,6 +548,51 @@ export default function AiChatScreen({ navigation }: any) {
               <Text style={styles.sendBtnText}>发送</Text>
             </PressableScale>
           </View>
+
+          {/* Conversation history */}
+          <Modal
+            visible={historyVisible}
+            animationType="slide"
+            presentationStyle="pageSheet"
+            onRequestClose={() => setHistoryVisible(false)}
+          >
+            <View style={styles.historyModal}>
+              <View style={styles.historyHeader}>
+                <View>
+                  <Text style={styles.historyTitle}>对话历史</Text>
+                  <Text style={styles.historySub}>最多保留 5 个对话，可随时切换或新建</Text>
+                </View>
+                <PressableScale onPress={() => setHistoryVisible(false)} style={styles.historyCloseBtn}>
+                  <Text style={styles.historyCloseText}>关闭</Text>
+                </PressableScale>
+              </View>
+
+              <PressableScale style={styles.newConvBtn} onPress={handleNewConversation}>
+                <Text style={styles.newConvBtnText}>+ 新建对话</Text>
+              </PressableScale>
+
+              <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: Spacing.section }}>
+                {conversations.filter(c => c.messages.length > 0).map(c => (
+                  <PressableScale
+                    key={c.id}
+                    style={[styles.historyItem, c.id === activeConvId && styles.historyItemActive]}
+                    onPress={() => handleOpenConversation(c)}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.historyItemTitle} numberOfLines={1}>{c.title || '（未命名对话）'}</Text>
+                      <Text style={styles.historyItemMeta}>
+                        {c.messages.length} 条消息 · {fmtDate(c.updatedAt)}
+                      </Text>
+                    </View>
+                    {c.id === activeConvId && <Text style={styles.historyItemCurrent}>当前</Text>}
+                  </PressableScale>
+                ))}
+                {conversations.filter(c => c.messages.length > 0).length === 0 && (
+                  <Text style={styles.historyEmpty}>还没有历史对话，点"新建对话"开始</Text>
+                )}
+              </ScrollView>
+            </View>
+          </Modal>
         </>
       )}
     </KeyboardAvoidingView>
@@ -567,4 +715,36 @@ const styles = StyleSheet.create({
 
   clearBtn: { paddingHorizontal: 4, paddingVertical: 4 },
   clearBtnText: { fontSize: 14, fontWeight: '500', color: Colors.textSecondary },
+
+  // ---- History ----
+  historyModal: { flex: 1, backgroundColor: Colors.background, paddingTop: Platform.OS === 'android' ? 48 : 16 },
+  historyHeader: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: Spacing.lg, paddingBottom: Spacing.md,
+  },
+  historyTitle: { ...Typography.title, fontSize: 19 },
+  historySub: { ...Typography.caption, marginTop: 2 },
+  historyCloseBtn: {
+    backgroundColor: Colors.surfaceHover, borderRadius: BorderRadius.md,
+    paddingHorizontal: 14, paddingVertical: 8, borderWidth: 1, borderColor: Colors.borderLight,
+  },
+  historyCloseText: { fontSize: 13, fontWeight: '500', color: Colors.textSecondary },
+  newConvBtn: {
+    backgroundColor: Colors.accent, borderRadius: BorderRadius.lg, marginHorizontal: Spacing.lg,
+    paddingVertical: 14, alignItems: 'center', marginBottom: Spacing.md, ...Shadow.button,
+  },
+  newConvBtnText: { fontSize: 15, fontWeight: '600', color: '#fff' },
+  historyItem: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: Colors.surface, borderRadius: BorderRadius.lg,
+    padding: Spacing.lg, marginHorizontal: Spacing.lg, marginBottom: Spacing.sm,
+    borderWidth: 1, borderColor: Colors.borderLight, ...Shadow.card,
+  },
+  historyItemActive: { borderColor: Colors.accent, backgroundColor: Colors.accentLight },
+  historyItemTitle: { fontSize: 15, fontWeight: '600', color: Colors.textPrimary },
+  historyItemMeta: { fontSize: 12, color: Colors.textMuted, marginTop: 3 },
+  historyItemCurrent: { fontSize: 12, fontWeight: '600', color: Colors.accent },
+  historyEmpty: {
+    ...Typography.caption, textAlign: 'center', marginTop: Spacing.xxxl,
+  },
 });

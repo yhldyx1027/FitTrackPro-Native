@@ -195,9 +195,9 @@ export function buildAiSystemPrompt(ctx: AiContext): string {
     '4. 安排三餐/加餐时给出具体食物建议，并检查总热量是否接近建议摄入，避免超支。',
     '5. 回答控制在 2~6 行，可用「热量｜碳水｜蛋白｜脂肪」格式排版，不要冗长。',
     '6. 不要编造 API、链接或下载地址；不确定的数据如实说明并建议以食品标签为准。',
-    '7. 当用户告诉你他吃了什么（如"我中午吃了200克鸡胸肉和一碗米饭"）时：',
-    '   - 先逐项估算并汇总这顿饭的总热量、碳水、蛋白质、脂肪（克），并在正文中给出简短的营养说明；',
-    '   - 然后在回答的最后单独输出一行结构化 JSON，格式必须严格为：',
+    '7. 只要用户描述了他吃了什么（如"我中午吃了200克鸡胸肉和一碗米饭""今天早餐吃了两个鸡蛋和燕麦""记录一下我刚吃的"，无论是否明确要求计算热量），都必须：',
+    '   - 先逐项估算并汇总这顿饭的总热量、碳水、蛋白质、脂肪（克），份量不确定时做合理假设并注明；',
+    '   - 然后在回答的最后单独输出一行结构化 JSON（即使只是"记录一下"也要输出），格式必须严格为：',
     '     __FOOD_JSON__{"name":"<简洁食物名，如：鸡胸肉+米饭 午餐>","calories":<整数>,"carbs":<数字>,"protein":<数字>,"fat":<数字>}__END__',
     '   - name 要能概括这顿饭（含主要食物与份量），四个数值四舍五入到整数或一位小数；',
     '   - 除了 __FOOD_JSON__ 那一行，正文中不要出现其他大括号 JSON，确保我能解析出这一行。',
@@ -352,6 +352,9 @@ export function extractFoodFromReply(reply: string): ParsedFood | null {
 
   if (!block) return null;
 
+  // The model sometimes wraps JSON in markdown code fences.
+  block = block.replace(/```(?:json)?/g, '').trim();
+
   try {
     const obj = JSON.parse(block);
     const name = String(obj.name ?? '').trim();
@@ -395,6 +398,8 @@ export function extractTrainingPlanFromReply(reply: string): GeneratedTrainingPl
   }
 
   if (!block) return null;
+
+  block = block.replace(/```(?:json)?/g, '').trim();
 
   try {
     const obj = JSON.parse(block);

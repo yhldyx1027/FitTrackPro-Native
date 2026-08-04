@@ -210,6 +210,44 @@ export async function saveAiSettings(settings: AiSettings): Promise<void> {
   await AsyncStorage.setItem(key('ai_settings'), JSON.stringify(settings));
 }
 
+// ---- AI Conversations ----
+
+export interface AiConversationMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  text: string;
+}
+
+export interface AiConversation {
+  id: string;
+  mode: 'diet' | 'training';
+  title: string;
+  createdAt: number;
+  updatedAt: number;
+  messages: AiConversationMessage[];
+}
+
+export const MAX_AI_CONVERSATIONS = 5;
+
+export async function loadAiConversations(mode: 'diet' | 'training'): Promise<AiConversation[]> {
+  try {
+    const raw = await AsyncStorage.getItem(key('ai_conversations_' + mode));
+    const list: AiConversation[] = raw ? JSON.parse(raw) : [];
+    return Array.isArray(list) ? list : [];
+  } catch { return []; }
+}
+
+export async function saveAiConversations(
+  mode: 'diet' | 'training',
+  conversations: AiConversation[]
+): Promise<void> {
+  // Keep at most the most recent MAX_AI_CONVERSATIONS (by updatedAt).
+  const trimmed = [...conversations]
+    .sort((a, b) => b.updatedAt - a.updatedAt)
+    .slice(0, MAX_AI_CONVERSATIONS);
+  await AsyncStorage.setItem(key('ai_conversations_' + mode), JSON.stringify(trimmed));
+}
+
 // ---- Maintenance ----
 
 export async function clearHistory(): Promise<void> {
