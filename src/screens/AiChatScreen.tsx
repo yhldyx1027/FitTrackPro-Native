@@ -23,7 +23,7 @@ import {
 } from '../services/ai';
 import {
   loadAiSettings, saveAiSettings,
-  loadAiConversations, saveAiConversations,
+  loadAiConversations, saveAiConversations, deleteAiConversation,
   AiConversation,
 } from '../storage/storage';
 import { createId } from '../utils/calculations';
@@ -56,6 +56,15 @@ function newId() {
   return 'msg-' + Math.random().toString(36).slice(2, 10);
 }
 
+// Heuristic: does the user's message read like "I ate X" (a food report)
+// rather than a general nutrition question? Used to decide whether a silent
+// structured-data retry is worthwhile.
+function looksLikeFoodReport(msg: string): boolean {
+  const hasEat = /吃了|喝了|吃过|吃完|早餐|午餐|晚餐|加餐|ate|had|eaten|meal|breakfast|lunch|dinner/i.test(msg);
+  const hasAmount = /(\d+\s*(克|g|kg|gram|grams)|碗|个|份|根|杯|盘|只|半|块|片|bowl|cup|plate|piece)/i.test(msg);
+  return hasEat && hasAmount;
+}
+
 export default function AiChatScreen({ navigation }: any) {
   const app = useApp();
   const route = useRoute();
@@ -78,7 +87,10 @@ export default function AiChatScreen({ navigation }: any) {
   const [error, setError] = useState('');
   const [kb, setKb] = useState(0);
   const [generatedFood, setGeneratedFood] = useState<ParsedFood | null>(null);
+  const [foodAdded, setFoodAdded] = useState(false);
+  const [foodExists, setFoodExists] = useState(false);
   const [generatedPlan, setGeneratedPlan] = useState<GeneratedTrainingPlan | null>(null);
+  const [planAdded, setPlanAdded] = useState(false);
   const [conversations, setConversations] = useState<AiConversation[]>([]);
   const [activeConvId, setActiveConvId] = useState<string | null>(null);
   const [historyVisible, setHistoryVisible] = useState(false);
@@ -162,6 +174,37 @@ export default function AiChatScreen({ navigation }: any) {
     }
   };
 
+  const handleAddFood = async () => {
+    if (!generatedFood) return;
+    const exists = app.foodDb.some(f => f.name === generatedFood.name);
+    if (exists) {
+      setFoodExists(true);
+      return;
+    }
+    await app.replaceFoodDb([...app.foodDb, generatedFood]);
+    setFoodAdded(true);
+  };
+
+  const handleAddPlan = async () => {
+    if (!generatedPlan) return;
+    const newPlan: TrainingPlan = {
+      id: createId('plan'),
+      name: generatedPlan.name,
+      notes: generatedPlan.notes,
+      estimatedDurationMinutes: generatedPlan.estimatedDurationMinutes,
+      exercises: generatedPlan.exercises.map(ex => ({
+        id: createId('exercise'),
+        name: ex.name,
+        sets: ex.sets.map(s => ({ id: createId('plan-set'), reps: s.reps, weight: s.weight })),
+        exerciseType: ex.exerciseType,
+        met: null,
+        bodyweightLoadFactor: 0.7,
+      })),
+    };
+    await app.upsertPlan(newPlan);
+    setPlanAdded(true);
+  };
+
   const buildSystemPrompt = (): string => {
     const recentTrainingLogs = app.historyTrainingLogs.slice(0, 14);
     const recentDietLogs = app.historyDietLogs.slice(0, 14);
@@ -212,11 +255,15 @@ export default function AiChatScreen({ navigation }: any) {
   const handleClear = async () => {
     setMessages([]);
     setGeneratedFood(null);
+    setFoodAdded(false);
+    setFoodExists(false);
     setGeneratedPlan(null);
+    setPlanAdded(false);
     if (!activeConvId) return;
-    const next = conversations.filter(c => c.id !== activeConvId);
+    const id = activeConvId;
     setActiveConvId(null);
-    await persistConvs(next);
+    await deleteAiConversation(mode, id);
+    setConversations(prev => prev.filter(c => c.id !== id));
   };
 
   const handleNewConversation = async () => {
@@ -230,7 +277,10 @@ export default function AiChatScreen({ navigation }: any) {
     };
     setMessages([]);
     setGeneratedFood(null);
+    setFoodAdded(false);
+    setFoodExists(false);
     setGeneratedPlan(null);
+    setPlanAdded(false);
     setActiveConvId(conv.id);
     setHistoryVisible(false);
     await persistConvs([conv, ...conversations]);
@@ -240,7 +290,10 @@ export default function AiChatScreen({ navigation }: any) {
     setMessages(conv.messages.map(m => ({ id: m.id, role: m.role, text: m.text })));
     setActiveConvId(conv.id);
     setGeneratedFood(null);
+    setFoodAdded(false);
+    setFoodExists(false);
     setGeneratedPlan(null);
+    setPlanAdded(false);
     setHistoryVisible(false);
     const next = conversations.map(c =>
       c.id === conv.id ? { ...c, updatedAt: Date.now() } : c
@@ -277,7 +330,10 @@ export default function AiChatScreen({ navigation }: any) {
     setInput('');
     setError('');
     setGeneratedFood(null);
+    setFoodAdded(false);
+    setFoodExists(false);
     setGeneratedPlan(null);
+    setPlanAdded(false);
     setLoading(true);
 
     let convId = activeConvId;
@@ -308,30 +364,38 @@ export default function AiChatScreen({ navigation }: any) {
       if (isTraining) {
         const plan = extractTrainingPlanFromReply(reply);
         if (plan) {
-          const newPlan: TrainingPlan = {
-            id: createId('plan'),
-            name: plan.name,
-            notes: plan.notes,
-            estimatedDurationMinutes: plan.estimatedDurationMinutes,
-            exercises: plan.exercises.map(ex => ({
-              id: createId('exercise'),
-              name: ex.name,
-              sets: ex.sets.map(s => ({ id: createId('plan-set'), reps: s.reps, weight: s.weight })),
-              exerciseType: ex.exerciseType,
-              met: null,
-              bodyweightLoadFactor: 0.7,
-            })),
-          };
-          await app.upsertPlan(newPlan);
+          // Do NOT auto-save: wait for the user to tap "添加到计划库".
           setGeneratedPlan(plan);
+          setPlanAdded(false);
         }
       } else {
-        const food = extractFoodFromReply(reply);
-        if (food) {
-          // Persist to the food library so it shows up in the Diet page with its own 添加 button.
-          if (!app.foodDb.some(f => f.name === food.name)) {
-            await app.replaceFoodDb([...app.foodDb, food]);
+        let food = extractFoodFromReply(reply);
+        // Long conversations sometimes make the model forget the structured
+        // marker. If the user clearly described what they ate but no food was
+        // parsed, silently retry once asking only for the structured data.
+        if (!food && looksLikeFoodReport(content)) {
+          try {
+            const retryReply = await chatWithDeepSeek(
+              settings.apiKey,
+              settings.model,
+              [
+                ...history,
+                { role: 'user', content },
+                { role: 'assistant', content: reply },
+                { role: 'user', content: '请只输出刚才那顿饭的结构化数据：__FOOD_JSON__{"name":"...","calories":...,"carbs":...,"protein":...,"fat":...}__END__，不要输出任何其他内容。' },
+              ],
+              buildSystemPrompt()
+            );
+            food = extractFoodFromReply(retryReply);
+          } catch {
+            // ignore retry failure, fall through without a generated food
           }
+        }
+        if (food) {
+          // Do NOT auto-save: wait for the user to tap "添加到食物库".
+          const exists = app.foodDb.some(f => f.name === food.name);
+          setFoodExists(exists);
+          setFoodAdded(false);
           setGeneratedFood(food);
         }
       }
@@ -504,28 +568,42 @@ export default function AiChatScreen({ navigation }: any) {
           {generatedFood && !isTraining && (
             <View style={styles.foodGenCard}>
               <View style={{ flex: 1 }}>
-                <Text style={styles.foodGenTitle}>已生成食物到食物库</Text>
+                <Text style={styles.foodGenTitle}>
+                  {foodAdded ? '已添加到食物库' : foodExists ? '该食物已在食物库中' : '已生成食物，点击添加入库'}
+                </Text>
                 <Text style={styles.foodGenMeta}>
                   {generatedFood.name}｜{generatedFood.calories}千卡｜碳{generatedFood.carbs} 蛋{generatedFood.protein} 脂{generatedFood.fat}
                 </Text>
               </View>
-              <PressableScale style={styles.foodGenBtn} onPress={goAddFood}>
-                <Text style={styles.foodGenBtnText}>去饮食页添加</Text>
-              </PressableScale>
+              {foodAdded || foodExists ? (
+                <PressableScale style={styles.foodGenBtn} onPress={goAddFood}>
+                  <Text style={styles.foodGenBtnText}>去饮食页查看</Text>
+                </PressableScale>
+              ) : (
+                <PressableScale style={styles.foodGenBtn} onPress={handleAddFood}>
+                  <Text style={styles.foodGenBtnText}>添加到食物库</Text>
+                </PressableScale>
+              )}
             </View>
           )}
 
           {generatedPlan && isTraining && (
             <View style={styles.foodGenCard}>
               <View style={{ flex: 1 }}>
-                <Text style={styles.foodGenTitle}>已生成训练计划到计划库</Text>
+                <Text style={styles.foodGenTitle}>{planAdded ? '已添加到计划库' : '已生成训练计划，点击添加入库'}</Text>
                 <Text style={styles.foodGenMeta}>
                   {generatedPlan.name}｜{generatedPlan.exercises.length}个动作｜约{generatedPlan.estimatedDurationMinutes ?? '?'}分钟
                 </Text>
               </View>
-              <PressableScale style={styles.foodGenBtn} onPress={goAddPlan}>
-                <Text style={styles.foodGenBtnText}>去训练页查看</Text>
-              </PressableScale>
+              {planAdded ? (
+                <PressableScale style={styles.foodGenBtn} onPress={goAddPlan}>
+                  <Text style={styles.foodGenBtnText}>去训练页查看</Text>
+                </PressableScale>
+              ) : (
+                <PressableScale style={styles.foodGenBtn} onPress={handleAddPlan}>
+                  <Text style={styles.foodGenBtnText}>添加到计划库</Text>
+                </PressableScale>
+              )}
             </View>
           )}
 

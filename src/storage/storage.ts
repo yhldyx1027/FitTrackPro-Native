@@ -241,11 +241,27 @@ export async function saveAiConversations(
   mode: 'diet' | 'training',
   conversations: AiConversation[]
 ): Promise<void> {
+  // Merge with what's already persisted so a stale in-memory list can never
+  // silently drop conversations (incoming entries win by id).
+  const existing = await loadAiConversations(mode);
+  const byId = new Map<string, AiConversation>();
+  for (const c of existing) byId.set(c.id, c);
+  for (const c of conversations) byId.set(c.id, c);
+
   // Keep at most the most recent MAX_AI_CONVERSATIONS (by updatedAt).
-  const trimmed = [...conversations]
+  const trimmed = Array.from(byId.values())
     .sort((a, b) => b.updatedAt - a.updatedAt)
     .slice(0, MAX_AI_CONVERSATIONS);
   await AsyncStorage.setItem(key('ai_conversations_' + mode), JSON.stringify(trimmed));
+}
+
+export async function deleteAiConversation(
+  mode: 'diet' | 'training',
+  conversationId: string
+): Promise<void> {
+  const existing = await loadAiConversations(mode);
+  const next = existing.filter(c => c.id !== conversationId);
+  await AsyncStorage.setItem(key('ai_conversations_' + mode), JSON.stringify(next));
 }
 
 // ---- Maintenance ----

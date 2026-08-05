@@ -195,12 +195,14 @@ export function buildAiSystemPrompt(ctx: AiContext): string {
     '4. 安排三餐/加餐时给出具体食物建议，并检查总热量是否接近建议摄入，避免超支。',
     '5. 回答控制在 2~6 行，可用「热量｜碳水｜蛋白｜脂肪」格式排版，不要冗长。',
     '6. 不要编造 API、链接或下载地址；不确定的数据如实说明并建议以食品标签为准。',
-    '7. 只要用户描述了他吃了什么（如"我中午吃了200克鸡胸肉和一碗米饭""今天早餐吃了两个鸡蛋和燕麦""记录一下我刚吃的"，无论是否明确要求计算热量），都必须：',
+    '7. 请记住本对话中用户提到过的食物、口味和习惯，后续回答主动引用，不要重复问已经说过的信息。',
+    '8. 只要用户描述了他吃了什么（如"我中午吃了200克鸡胸肉和一碗米饭""今天早餐吃了两个鸡蛋和燕麦""记录一下我刚吃的"，无论是否明确要求计算热量，也无论这是第几轮对话），都必须：',
     '   - 先逐项估算并汇总这顿饭的总热量、碳水、蛋白质、脂肪（克），份量不确定时做合理假设并注明；',
     '   - 然后在回答的最后单独输出一行结构化 JSON（即使只是"记录一下"也要输出），格式必须严格为：',
     '     __FOOD_JSON__{"name":"<简洁食物名，如：鸡胸肉+米饭 午餐>","calories":<整数>,"carbs":<数字>,"protein":<数字>,"fat":<数字>}__END__',
     '   - name 要能概括这顿饭（含主要食物与份量），四个数值四舍五入到整数或一位小数；',
     '   - 除了 __FOOD_JSON__ 那一行，正文中不要出现其他大括号 JSON，确保我能解析出这一行。',
+    '   - 这条规则对每一轮对话都生效：只要本轮用户描述了吃了什么，就绝对不要省略 __FOOD_JSON__ 输出。',
   ].join('\n');
 }
 
@@ -247,17 +249,18 @@ export function buildTrainingSystemPrompt(ctx: AiTrainingContext): string {
     '【回答要求】',
     '1. 用户问训练建议时：结合他的身体数据、目标和计划库现状，给出动作选择、组数次数、重量强度、频率与恢复建议。',
     '2. 回答时主动引用近期历史（训练频率、容量/消耗变化、体重趋势），避免重复刺激或过度训练。',
-    '3. 凡是提到"今日状态/训练次数/容量/消耗/体重"等数字，必须直接引用上面【今日状态】【近期历史】中给出的数值，不要自行重新计算；',
-    '4. 增肌建议以 8~12 次、3~4 组为主；力量 4~6 次；减脂可加入有氧/超级组，并提示控制总时长。',
-    '5. 当用户要求"生成训练计划"或"帮我安排计划"时：',
+    '3. 记住本对话中用户提到过的训练安排、动作偏好和进度，后续回答主动引用。',
+    '4. 凡是提到"今日状态/训练次数/容量/消耗/体重"等数字，必须直接引用上面【今日状态】【近期历史】中给出的数值，不要自行重新计算；',
+    '5. 增肌建议以 8~12 次、3~4 组为主；力量 4~6 次；减脂可加入有氧/超级组，并提示控制总时长。',
+    '6. 当用户要求"生成训练计划"或"帮我安排计划"时（无论第几轮对话）：',
     '   - 先简短说明这个计划的思路（目标、频率、重点），然后在回答最后单独输出一行结构化 JSON，格式必须严格为：',
     '     __PLAN_JSON__{"name":"<计划名>","notes":"<1~2句说明>","estimatedDurationMinutes":<预计分钟数>,"exercises":[{"name":"<动作名>","exerciseType":"weighted|bodyweight|cardio","sets":[{"reps":<次数>,"weight":<公斤数或null>},...]}]}__END__',
     '   - exerciseType 只能是 weighted（负重）、bodyweight（自重）、cardio（有氧）三者之一；',
     '   - 负重动作的 weight 填公斤数（如 60），可填 null 表示待定；自重动作 weight 填 null；有氧动作把 reps 当作"分钟"填写；',
     '   - 一个计划包含 4~8 个动作，每个动作 2~4 组，覆盖目标肌群；',
     '   - 若用户说"按照现有计划优化"，请在 plan 的 notes 里注明调整点。',
-    '6. 除了 __PLAN_JSON__ 那一行，正文中不要出现其他大括号 JSON，确保我能解析出这一行。',
-    '7. 不要编造 API、链接或下载地址；不确定时如实说明。',
+    '7. 除了 __PLAN_JSON__ 那一行，正文中不要出现其他大括号 JSON，确保我能解析出这一行。',
+    '8. 不要编造 API、链接或下载地址；不确定时如实说明。',
   ].join('\n');
 }
 
@@ -277,7 +280,7 @@ export async function chatWithDeepSeek(
   ];
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 60000);
+  const timer = setTimeout(() => controller.abort(), 120000);
 
   try {
     const res = await fetch(DEEPSEEK_ENDPOINT, {
@@ -338,14 +341,12 @@ export function extractFoodFromReply(reply: string): ParsedFood | null {
   if (marked) {
     block = marked[1].trim();
   } else {
-    const objs = reply.match(/\{[\s\S]*?\}/g);
-    if (objs) {
-      for (let i = objs.length - 1; i >= 0; i--) {
-        const o = objs[i];
-        if (o.includes('"name"') && (o.includes('"calories"') || o.includes('"protein"'))) {
-          block = o;
-          break;
-        }
+    const objs = extractBalancedJsonObjects(reply);
+    for (let i = objs.length - 1; i >= 0; i--) {
+      const o = objs[i];
+      if (o.includes('"name"') && (o.includes('"calories"') || o.includes('"protein"'))) {
+        block = o;
+        break;
       }
     }
   }
@@ -385,14 +386,12 @@ export function extractTrainingPlanFromReply(reply: string): GeneratedTrainingPl
   if (marked) {
     block = marked[1].trim();
   } else {
-    const objs = reply.match(/\{[\s\S]*?\}/g);
-    if (objs) {
-      for (let i = objs.length - 1; i >= 0; i--) {
-        const o = objs[i];
-        if (o.includes('"exercises"') && o.includes('"name"')) {
-          block = o;
-          break;
-        }
+    const objs = extractBalancedJsonObjects(reply);
+    for (let i = objs.length - 1; i >= 0; i--) {
+      const o = objs[i];
+      if (o.includes('"exercises"') && o.includes('"name"')) {
+        block = o;
+        break;
       }
     }
   }
@@ -436,4 +435,38 @@ export function extractTrainingPlanFromReply(reply: string): GeneratedTrainingPl
   } catch {
     return null;
   }
+}
+
+/**
+ * Extract all balanced JSON-ish objects `{...}` from a string, handling
+ * nested braces correctly (works even without the __*_JSON__ markers).
+ */
+function extractBalancedJsonObjects(text: string): string[] {
+  const results: string[] = [];
+  const MAX_LEN = 12000;
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] !== '{') continue;
+    let depth = 0;
+    let inStr = false;
+    let escape = false;
+    for (let j = i; j < text.length && j - i < MAX_LEN; j++) {
+      const ch = text[j];
+      if (inStr) {
+        if (escape) escape = false;
+        else if (ch === '\\') escape = true;
+        else if (ch === '"') inStr = false;
+        continue;
+      }
+      if (ch === '"') inStr = true;
+      else if (ch === '{') depth++;
+      else if (ch === '}') {
+        depth--;
+        if (depth === 0) {
+          results.push(text.slice(i, j + 1));
+          break;
+        }
+      }
+    }
+  }
+  return results;
 }

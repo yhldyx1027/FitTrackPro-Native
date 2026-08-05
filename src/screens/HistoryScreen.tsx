@@ -3,14 +3,33 @@
 // ============================================================
 
 import React, { useState, useMemo } from 'react';
-import { View, Text, ScrollView, StyleSheet } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, Modal, Platform } from 'react-native';
 import { useApp } from '../hooks/useAppState';
 import { Colors, Spacing, BorderRadius, Shadow, Typography } from '../theme';
-import { Calc, toR, getTodayKey } from '../utils/calculations';
+import { Calc, toR, getTodayKey, MEAL_LABELS, MEAL_TYPES } from '../utils/calculations';
 import * as Storage from '../storage/storage';
 import PressableScale from '../components/PressableScale';
+import { WorkoutSet, DietEntry } from '../types';
 
 const DAYS = ['日', '一', '二', '三', '四', '五', '六'];
+
+function groupSetsByExercise(sets: WorkoutSet[]) {
+  const groups: { name: string; sets: WorkoutSet[] }[] = [];
+  const map = new Map<string, WorkoutSet[]>();
+  sets.forEach(s => {
+    const key = s.exerciseId || s.exercise;
+    if (!map.has(key)) map.set(key, []);
+    map.get(key)!.push(s);
+  });
+  map.forEach(ss => groups.push({ name: ss[0]?.exercise || '动作', sets: ss }));
+  return groups;
+}
+
+function formatSetLine(s: WorkoutSet): string {
+  if (s.exerciseType === 'cardio') return `${s.reps} 分钟`;
+  if (s.exerciseType === 'bodyweight') return `自重 × ${s.reps} 次`;
+  return `${s.weight || 0}kg × ${s.reps} 次`;
+}
 
 export default function HistoryScreen() {
   const app = useApp();
@@ -21,6 +40,7 @@ export default function HistoryScreen() {
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [previewVisible, setPreviewVisible] = useState(false);
 
   // Build data map
   const dataMap = useMemo(() => {
@@ -45,7 +65,7 @@ export default function HistoryScreen() {
     let y = year;
     if (m < 1) { m = 12; y--; }
     if (m > 12) { m = 1; y++; }
-    setMonth(m); setYear(y); setSelectedDate(null);
+    setMonth(m); setYear(y); setSelectedDate(null); setPreviewVisible(false);
   };
 
   const calendarCells: (number | null)[] = [];
@@ -81,7 +101,7 @@ export default function HistoryScreen() {
               <PressableScale
                 key={ds}
                 style={[styles.calDay, isToday && styles.calToday, hasData && styles.calHasData, isSelected && styles.calSelected]}
-                onPress={() => setSelectedDate(ds)}
+                onPress={() => { setSelectedDate(ds); setPreviewVisible(false); }}
               >
                 <Text style={[styles.calDayText, isToday && styles.calTodayText, isSelected && styles.calSelectedText]}>
                   {d}
@@ -97,28 +117,102 @@ export default function HistoryScreen() {
           <View style={styles.detail}>
             <Text style={styles.detailDate}>{selectedDate}</Text>
             {selectedData?.tr ? (
-              <View style={styles.detailBlock}>
-                <Text style={styles.detailTitle}>训练 · {selectedData.tr.planUsed}</Text>
+              <PressableScale style={styles.detailBlock} onPress={() => setPreviewVisible(true)}>
+                <View style={styles.detailHeaderRow}>
+                  <Text style={styles.detailTitle}>训练 · {selectedData.tr.planUsed}</Text>
+                  <Text style={styles.detailChevron}>›</Text>
+                </View>
                 <Text style={styles.detailMeta}>
                   容量 {toR(selectedData.tr.volume)} · 消耗 {toR(selectedData.tr.calories)} 千卡 · {selectedData.tr.durationMinutes} 分钟
                 </Text>
-              </View>
+              </PressableScale>
             ) : (
               <Text style={styles.noData}>训练 · 无记录</Text>
             )}
             {selectedData?.di ? (
-              <View style={styles.detailBlock}>
-                <Text style={styles.detailTitle}>饮食 · 共 {selectedData.di.entries.length} 条</Text>
+              <PressableScale style={styles.detailBlock} onPress={() => setPreviewVisible(true)}>
+                <View style={styles.detailHeaderRow}>
+                  <Text style={styles.detailTitle}>饮食 · 共 {selectedData.di.entries.length} 条</Text>
+                  <Text style={styles.detailChevron}>›</Text>
+                </View>
                 <Text style={styles.detailMeta}>
                   摄入 {toR(Calc.dietTotals(selectedData.di.entries).calories)} 千卡 · 碳水 {toR(Calc.dietTotals(selectedData.di.entries).carbs)}g · 蛋白 {toR(Calc.dietTotals(selectedData.di.entries).protein)}g · 脂肪 {toR(Calc.dietTotals(selectedData.di.entries).fat)}g
                 </Text>
-              </View>
+              </PressableScale>
             ) : (
               <Text style={styles.noData}>饮食 · 无记录</Text>
             )}
           </View>
         )}
         {!selectedDate && <Text style={styles.selectHint}>点击日期查看详情</Text>}
+
+        {/* Preview Modal */}
+        <Modal
+          visible={previewVisible}
+          animationType="slide"
+          presentationStyle="pageSheet"
+          onRequestClose={() => setPreviewVisible(false)}
+        >
+          <View style={styles.preview}>
+            <View style={styles.previewHeader}>
+              <View>
+                <Text style={styles.previewTitle}>{selectedDate} · 记录预览</Text>
+                <Text style={styles.previewSub}>训练和饮食的完整明细</Text>
+              </View>
+              <PressableScale onPress={() => setPreviewVisible(false)} style={styles.previewCloseBtn}>
+                <Text style={styles.previewCloseText}>关闭</Text>
+              </PressableScale>
+            </View>
+
+            <ScrollView contentContainerStyle={styles.previewContent}>
+              {selectedData?.tr && (
+                <View style={styles.previewSection}>
+                  <Text style={styles.previewSectionTitle}>训练 · {selectedData.tr.planUsed}</Text>
+                  <Text style={styles.previewMeta}>
+                    时长 {selectedData.tr.durationMinutes} 分钟 · 容量 {toR(selectedData.tr.volume)} · 消耗 {toR(selectedData.tr.calories)} 千卡
+                  </Text>
+                  {groupSetsByExercise(selectedData.tr.sets).map((g, i) => (
+                    <View key={i} style={styles.previewGroup}>
+                      <Text style={styles.previewGroupTitle}>{g.name}</Text>
+                      {g.sets.map(s => (
+                        <Text key={s.id} style={styles.previewGroupLine}>
+                          第 {s.setNumber} 组 · {formatSetLine(s)}
+                        </Text>
+                      ))}
+                    </View>
+                  ))}
+                </View>
+              )}
+
+              {selectedData?.di && (
+                <View style={styles.previewSection}>
+                  <Text style={styles.previewSectionTitle}>饮食 · 共 {selectedData.di.entries.length} 条</Text>
+                  <Text style={styles.previewMeta}>
+                    摄入 {toR(Calc.dietTotals(selectedData.di.entries).calories)} 千卡 · 碳水 {toR(Calc.dietTotals(selectedData.di.entries).carbs)}g · 蛋白 {toR(Calc.dietTotals(selectedData.di.entries).protein)}g · 脂肪 {toR(Calc.dietTotals(selectedData.di.entries).fat)}g
+                  </Text>
+                  {MEAL_TYPES.map(mt => {
+                    const items = selectedData.di.entries.filter((e: DietEntry) => e.mealType === mt);
+                    if (items.length === 0) return null;
+                    return (
+                      <View key={mt} style={styles.previewGroup}>
+                        <Text style={styles.previewGroupTitle}>{MEAL_LABELS[mt]}</Text>
+                        {items.map((e: DietEntry, i: number) => (
+                          <Text key={i} style={styles.previewGroupLine}>
+                            {e.name} × {e.servings} · {toR(e.calories * e.servings)}千卡 · 碳{toR(e.carbs * e.servings)} 蛋{toR(e.protein * e.servings)} 脂{toR(e.fat * e.servings)}
+                          </Text>
+                        ))}
+                      </View>
+                    );
+                  })}
+                </View>
+              )}
+
+              {!selectedData?.tr && !selectedData?.di && (
+                <Text style={styles.previewEmpty}>这一天没有训练或饮食记录。</Text>
+              )}
+            </ScrollView>
+          </View>
+        </Modal>
       </View>
     </ScrollView>
   );
@@ -175,4 +269,35 @@ const styles = StyleSheet.create({
   detailTitle: { fontSize: 14, fontWeight: '600', color: Colors.textPrimary },
   detailMeta: { fontSize: 12, color: Colors.textMuted, marginTop: 4 },
   noData: { fontSize: 13, color: Colors.textMuted, paddingVertical: 6 },
+  detailHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  detailChevron: { fontSize: 20, color: Colors.textMuted, marginLeft: 8 },
+
+  // Preview modal
+  preview: { flex: 1, backgroundColor: Colors.background, paddingTop: Platform.OS === 'android' ? 48 : 16 },
+  previewHeader: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: Spacing.lg, paddingBottom: Spacing.md,
+  },
+  previewTitle: { fontSize: 19, fontWeight: '600', color: Colors.textPrimary, letterSpacing: -0.3 },
+  previewSub: { fontSize: 12, color: Colors.textMuted, marginTop: 2 },
+  previewCloseBtn: {
+    backgroundColor: Colors.surfaceHover, borderRadius: BorderRadius.md,
+    paddingHorizontal: 14, paddingVertical: 8, borderWidth: 1, borderColor: Colors.borderLight,
+  },
+  previewCloseText: { fontSize: 13, fontWeight: '500', color: Colors.textSecondary },
+  previewContent: { paddingHorizontal: Spacing.lg, paddingBottom: Spacing.section },
+  previewSection: {
+    backgroundColor: Colors.surface, borderRadius: BorderRadius.lg,
+    padding: Spacing.lg, marginBottom: Spacing.md,
+    borderWidth: 1, borderColor: Colors.borderLight, ...Shadow.card,
+  },
+  previewSectionTitle: { fontSize: 15, fontWeight: '600', color: Colors.textPrimary },
+  previewMeta: { fontSize: 12, color: Colors.textMuted, marginTop: 4, marginBottom: Spacing.md },
+  previewGroup: {
+    backgroundColor: Colors.surfaceHover, borderRadius: BorderRadius.md,
+    padding: Spacing.md, marginTop: Spacing.sm,
+  },
+  previewGroupTitle: { fontSize: 13, fontWeight: '600', color: Colors.accent, marginBottom: 4 },
+  previewGroupLine: { fontSize: 13, color: Colors.textSecondary, lineHeight: 21 },
+  previewEmpty: { ...Typography.caption, textAlign: 'center', marginTop: Spacing.xxxl },
 });
