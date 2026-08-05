@@ -2,16 +2,15 @@
 // FitTrack Pro - Dashboard Screen
 // ============================================================
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
-  View, Text, ScrollView, TextInput,
+  View, Text, ScrollView,
   StyleSheet,
 } from 'react-native';
 import Svg, { G, Path } from 'react-native-svg';
 import { useApp } from '../hooks/useAppState';
 import { Colors, Spacing, BorderRadius, Shadow, Typography } from '../theme';
-import { Calc, toR, GOAL_LABELS, getTodayKey } from '../utils/calculations';
-import * as Storage from '../storage/storage';
+import { Calc, toR, GOAL_LABELS } from '../utils/calculations';
 import PressableScale from '../components/PressableScale';
 
 const TICK_R_OUTER = 186;    // watch-face tick ring (outer edge)
@@ -170,9 +169,6 @@ export default function DashboardScreen({ navigation }: any) {
         </Text>
       </View>
 
-      {/* Weight */}
-      <WeightInput onSaved={app.saveWeightRecord} />
-
       {/* Stat Cards */}
       <View style={styles.statRow}>
         <StatCard label="基础代谢" value={`${toR(m.bmr)} 千卡`} color={Colors.accent} fill={m.tdee > 0 ? Math.min(m.bmr / m.tdee, 1) : 0} />
@@ -227,38 +223,6 @@ function LoadingView() {
   return (
     <View style={styles.loading}>
       <Text style={styles.loadingText}>正在整理你的训练台</Text>
-    </View>
-  );
-}
-
-function WeightInput({ onSaved }: { onSaved: (w: number) => Promise<void> }) {
-  const [val, setVal] = useState('');
-  const [saved, setSaved] = useState(false);
-
-  // Show today's already-recorded weight so the user can see/edit it.
-  useEffect(() => {
-    (async () => {
-      const w = await Storage.loadWeight(getTodayKey());
-      if (w?.weight != null) setVal(String(w.weight));
-    })();
-  }, []);
-
-  const handleSave = useCallback(async () => {
-    const n = parseFloat(val);
-    if (isNaN(n) || n <= 0) return;
-    await onSaved(n);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
-  }, [val, onSaved]);
-
-  return (
-    <View style={styles.weightRow}>
-      <Text style={styles.weightLabel}>今日体重</Text>
-      <TextInput style={styles.weightInput} value={val} onChangeText={setVal} placeholder="kg" keyboardType="decimal-pad" />
-      <Text style={styles.weightUnit}>kg</Text>
-      <PressableScale style={[styles.weightBtn, saved && { backgroundColor: Colors.accent }]} onPress={handleSave}>
-        <Text style={[styles.weightBtnText, saved && { color: '#fff' }]}>{saved ? '已记录' : '记录'}</Text>
-      </PressableScale>
     </View>
   );
 }
@@ -348,18 +312,6 @@ const styles = StyleSheet.create({
   heroGoal: { fontSize: 13, color: Colors.textMuted },
   heroCalories: { ...Typography.metricLarge, marginBottom: Spacing.sm },
   heroDesc: { ...Typography.caption, maxWidth: '80%' },
-
-  // Weight
-  weightRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 10, padding: Spacing.md,
-    backgroundColor: Colors.surface, borderRadius: BorderRadius.lg,
-    borderWidth: 1, borderColor: Colors.border, marginBottom: Spacing.lg,
-  },
-  weightLabel: { fontSize: 13, fontWeight: '600', color: Colors.textPrimary },
-  weightInput: { flex: 1, textAlign: 'center', fontSize: 15, color: Colors.textPrimary, padding: 4 },
-  weightUnit: { fontSize: 13, color: Colors.textMuted },
-  weightBtn: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: BorderRadius.sm, backgroundColor: Colors.accentLight },
-  weightBtnText: { fontSize: 13, fontWeight: '600', color: Colors.accent },
 
   // Stats
   statRow: { flexDirection: 'row', gap: 10, marginBottom: Spacing.lg },
