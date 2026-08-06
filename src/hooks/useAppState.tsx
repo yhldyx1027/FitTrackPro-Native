@@ -67,7 +67,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [historyDietLogs, setHistoryDietLogs] = useState<DietLog[]>([]);
   const [weightHistory, setWeightHistory] = useState<WeightRecord[]>([]);
 
-  const today = getTodayKey();
+  const [today, setToday] = useState(getTodayKey());
+  const todayRef = useRef(today);
+  todayRef.current = today;
 
   // Derived state
   const isTrainingDay = !!(todayTrainingLog || todayWorkout);
@@ -122,10 +124,26 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // AppState listener for background/foreground
   const appState = useRef(AppState.currentState);
   useEffect(() => {
-    const sub = AppState.addEventListener('change', (_nextAppState: AppStateStatus) => {
-      appState.current = _nextAppState;
+    const sub = AppState.addEventListener('change', (next: AppStateStatus) => {
+      appState.current = next;
+      // When the app comes back to the foreground on a new day, refresh the
+      // overview automatically instead of requiring a manual restart.
+      if (next === 'active') {
+        const nd = getTodayKey();
+        if (nd !== todayRef.current) setToday(nd);
+      }
     });
     return () => sub.remove();
+  }, []);
+
+  // Midnight rollover: while the app stays open across the date boundary,
+  // switch to the new day automatically (checked every 30 seconds).
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const nd = getTodayKey();
+      if (nd !== todayRef.current) setToday(nd);
+    }, 30000);
+    return () => clearInterval(timer);
   }, []);
 
   // ---- Actions ----

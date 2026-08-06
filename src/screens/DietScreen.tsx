@@ -23,8 +23,9 @@ export default function DietScreen({ navigation }: any) {
   const m = Calc.buildDashboardMetrics(profile, todayTrainingLog, todayDietEntries, isTrainingDay, trainingCal);
   const totals = Calc.dietTotals(todayDietEntries);
 
-  const [selectedMeal, setSelectedMeal] = useState<MealType>('breakfast');
-  const [servings, setServings] = useState('1');
+  const [addFoodTarget, setAddFoodTarget] = useState<FoodItem | null>(null);
+  const [addMeal, setAddMeal] = useState<MealType | null>(null);
+  const [addServings, setAddServings] = useState('1');
   const [foodEditorVisible, setFoodEditorVisible] = useState(false);
   const [msg, setMsg] = useState('');
 
@@ -33,10 +34,22 @@ export default function DietScreen({ navigation }: any) {
     setTimeout(() => setMsg(''), 2400);
   };
 
-  const handleAddFood = async (item: FoodItem) => {
-    const entry: DietEntry = { ...item, servings: Number(servings) || 1, mealType: selectedMeal };
+  const openAddModal = (item: FoodItem) => {
+    setAddFoodTarget(item);
+    setAddMeal(null); // 餐次默认不选，必须手动选择
+    setAddServings('1'); // 份数默认 1
+  };
+
+  const confirmAddFood = async () => {
+    if (!addFoodTarget || !addMeal) return;
+    const entry: DietEntry = {
+      ...addFoodTarget,
+      servings: Number(addServings) || 1,
+      mealType: addMeal,
+    };
     await app.addDietEntry(entry);
-    showMsg(`已添加到${MEAL_LABELS[selectedMeal]}`);
+    setAddFoodTarget(null);
+    showMsg(`已添加到${MEAL_LABELS[addMeal]}`);
   };
 
   const handleRemoveEntry = async (index: number) => {
@@ -92,29 +105,10 @@ export default function DietScreen({ navigation }: any) {
       {/* Meal Selection & Food Search */}
       <View style={styles.card}>
         <Text style={styles.cardTitle}>记录餐次</Text>
-        <Text style={styles.cardSub}>先选餐次和份数，再点食物旁的“添加”</Text>
-
-        {/* Meal chips */}
-        <View style={styles.chipRow}>
-          {MEAL_TYPES.map(mt => (
-            <PressableScale
-              key={mt}
-              style={[styles.chip, selectedMeal === mt && styles.chipActive]}
-              onPress={() => setSelectedMeal(mt)}
-            >
-              <Text style={[styles.chipText, selectedMeal === mt && styles.chipTextActive]}>
-                {MEAL_LABELS[mt]}
-              </Text>
-            </PressableScale>
-          ))}
-        </View>
-
-        {/* Servings */}
-        <Text style={styles.formLabel}>份数</Text>
-        <TextInput style={[styles.input, { width: 100 }]} value={servings} onChangeText={setServings} keyboardType="numeric" placeholder="1" placeholderTextColor={Colors.textMuted} />
+        <Text style={styles.cardSub}>点食物旁的“添加”，在弹出的窗口选择餐次和份数</Text>
 
         {/* Full food library */}
-        <Text style={[styles.formLabel, { marginTop: Spacing.lg }]}>食物库</Text>
+        <Text style={styles.formLabel}>食物库</Text>
         {foodDb.length === 0 ? (
           <Text style={styles.dropdownEmpty}>食物库为空，先到“今日已吃”点“管理食物库”添加食物。</Text>
         ) : (
@@ -124,7 +118,7 @@ export default function DietScreen({ navigation }: any) {
                 <Text style={styles.entryName}>{f.name}</Text>
                 <Text style={styles.entryMeta}>{f.calories}千卡 | 碳{f.carbs} 蛋{f.protein} 脂{f.fat}</Text>
               </View>
-              <PressableScale style={styles.addBtn} onPress={() => handleAddFood(f)}>
+              <PressableScale style={styles.addBtn} onPress={() => openAddModal(f)}>
                 <Text style={styles.addBtnText}>添加</Text>
               </PressableScale>
             </View>
@@ -173,6 +167,80 @@ export default function DietScreen({ navigation }: any) {
 
       {/* Food DB Editor Modal */}
       <FoodEditorModal visible={foodEditorVisible} onClose={() => setFoodEditorVisible(false)} />
+
+      {/* Add-food Modal: choose meal (required) + servings (default 1) */}
+      <Modal
+        visible={!!addFoodTarget}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setAddFoodTarget(null)}
+      >
+        <KeyboardAvoidingView style={styles.modalContainer} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+          <View style={styles.modalHeader}>
+            <PressableScale onPress={() => setAddFoodTarget(null)} style={styles.modalIconBtn}><Text style={styles.modalBack}>←</Text></PressableScale>
+            <Text style={styles.modalTitle}>添加到今日</Text>
+            <View style={{ width: 40 }} />
+          </View>
+
+          <ScrollView style={styles.modalBody} contentContainerStyle={styles.addModalBody} keyboardShouldPersistTaps="handled">
+            {addFoodTarget && (
+              <View style={styles.addFoodInfo}>
+                <Text style={styles.entryName}>{addFoodTarget.name}</Text>
+                <Text style={styles.entryMeta}>
+                  {addFoodTarget.calories}千卡 | 碳{addFoodTarget.carbs} 蛋{addFoodTarget.protein} 脂{addFoodTarget.fat}
+                </Text>
+              </View>
+            )}
+
+            <Text style={styles.formLabel}>选择餐次（必选）</Text>
+            <View style={styles.chipRow}>
+              {MEAL_TYPES.map(mt => (
+                <PressableScale
+                  key={mt}
+                  style={[styles.chip, addMeal === mt && styles.chipActive]}
+                  onPress={() => setAddMeal(mt)}
+                >
+                  <Text style={[styles.chipText, addMeal === mt && styles.chipTextActive]}>
+                    {MEAL_LABELS[mt]}
+                  </Text>
+                </PressableScale>
+              ))}
+            </View>
+
+            <Text style={styles.formLabel}>份数（默认 1 份）</Text>
+            <View style={styles.servingsRow}>
+              <PressableScale
+                style={styles.servingsBtn}
+                onPress={() => setAddServings(s => String(Math.max(1, (Number(s) || 1) - 1)))}
+              >
+                <Text style={styles.servingsBtnText}>−</Text>
+              </PressableScale>
+              <TextInput
+                style={[styles.input, styles.servingsInput]}
+                value={addServings}
+                onChangeText={t => { if (/^\d*$/.test(t)) setAddServings(t); }}
+                keyboardType="number-pad"
+                placeholder="1"
+                placeholderTextColor={Colors.textMuted}
+              />
+              <PressableScale
+                style={styles.servingsBtn}
+                onPress={() => setAddServings(s => String((Number(s) || 1) + 1))}
+              >
+                <Text style={styles.servingsBtnText}>＋</Text>
+              </PressableScale>
+            </View>
+
+            <PressableScale
+              style={[styles.primaryBtn, !addMeal && styles.primaryBtnDisabled]}
+              onPress={confirmAddFood}
+            >
+              <Text style={styles.primaryBtnText}>添加到今日</Text>
+            </PressableScale>
+            {!addMeal && <Text style={styles.addModalHint}>请先选择一个餐次</Text>}
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </Modal>
     </ScrollView>
   );
 }
@@ -406,6 +474,23 @@ const styles = StyleSheet.create({
     alignItems: 'center', marginTop: Spacing.lg, ...Shadow.button,
   },
   primaryBtnText: { fontSize: 15, fontWeight: '600', color: '#fff' },
+  primaryBtnDisabled: { opacity: 0.45 },
+
+  addModalBody: { padding: Spacing.lg, paddingBottom: Spacing.section },
+  addFoodInfo: {
+    backgroundColor: Colors.surfaceHover, borderRadius: BorderRadius.md,
+    padding: Spacing.md, marginBottom: Spacing.lg, borderWidth: 1, borderColor: Colors.borderLight,
+  },
+  servingsRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: Spacing.lg },
+  servingsBtn: {
+    width: 44, height: 44, borderRadius: BorderRadius.md,
+    backgroundColor: Colors.surfaceHover, borderWidth: 1, borderColor: Colors.border,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  servingsBtnText: { fontSize: 22, fontWeight: '600', color: Colors.accent, lineHeight: 26 },
+  servingsInput: { flex: 1, textAlign: 'center', fontSize: 16, fontWeight: '600' },
+  addModalHint: { fontSize: 12, color: Colors.textMuted, textAlign: 'center', marginTop: Spacing.sm },
+
   outlineBtn: {
     borderWidth: 1, borderColor: Colors.border, paddingVertical: 14,
     borderRadius: BorderRadius.lg, alignItems: 'center', marginTop: Spacing.md,
