@@ -9,7 +9,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, ScrollView, TextInput,
   StyleSheet, ActivityIndicator, KeyboardAvoidingView, Platform, Keyboard,
-  Dimensions, PixelRatio, Modal,
+  Dimensions, PixelRatio, Modal, Clipboard,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRoute } from '@react-navigation/native';
@@ -65,6 +65,11 @@ function looksLikeFoodReport(msg: string): boolean {
   return hasEat && hasAmount;
 }
 
+// Heuristic: does the user's message ask to GENERATE a training plan?
+function looksLikePlanRequest(msg: string): boolean {
+  return /(生成|创建|设计|安排|制定|给).*计划/.test(msg) || /(生成|创建|设计).*训练/.test(msg);
+}
+
 export default function AiChatScreen({ navigation }: any) {
   const app = useApp();
   const route = useRoute();
@@ -91,6 +96,7 @@ export default function AiChatScreen({ navigation }: any) {
   const [foodExists, setFoodExists] = useState(false);
   const [generatedPlan, setGeneratedPlan] = useState<GeneratedTrainingPlan | null>(null);
   const [planAdded, setPlanAdded] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const [conversations, setConversations] = useState<AiConversation[]>([]);
   const [activeConvId, setActiveConvId] = useState<string | null>(null);
   const [historyVisible, setHistoryVisible] = useState(false);
@@ -187,22 +193,32 @@ export default function AiChatScreen({ navigation }: any) {
 
   const handleAddPlan = async () => {
     if (!generatedPlan) return;
-    const newPlan: TrainingPlan = {
-      id: createId('plan'),
-      name: generatedPlan.name,
-      notes: generatedPlan.notes,
-      estimatedDurationMinutes: generatedPlan.estimatedDurationMinutes,
-      exercises: generatedPlan.exercises.map(ex => ({
-        id: createId('exercise'),
-        name: ex.name,
-        sets: ex.sets.map(s => ({ id: createId('plan-set'), reps: s.reps, weight: s.weight })),
-        exerciseType: ex.exerciseType,
-        met: null,
-        bodyweightLoadFactor: 0.7,
-      })),
-    };
-    await app.upsertPlan(newPlan);
-    setPlanAdded(true);
+    try {
+      const newPlan: TrainingPlan = {
+        id: createId('plan'),
+        name: generatedPlan.name,
+        notes: generatedPlan.notes,
+        estimatedDurationMinutes: generatedPlan.estimatedDurationMinutes,
+        exercises: generatedPlan.exercises.map(ex => ({
+          id: createId('exercise'),
+          name: ex.name,
+          sets: ex.sets.map(s => ({ id: createId('plan-set'), reps: s.reps, weight: s.weight })),
+          exerciseType: ex.exerciseType,
+          met: null,
+          bodyweightLoadFactor: 0.7,
+        })),
+      };
+      await app.upsertPlan(newPlan);
+      setPlanAdded(true);
+    } catch {
+      setError('添加训练计划失败，请重试');
+    }
+  };
+
+  const copyMessage = (m: ChatMsg) => {
+    Clipboard.setString(m.text);
+    setCopiedId(m.id);
+    setTimeout(() => setCopiedId(v => (v === m.id ? null : v)), 2000);
   };
 
   const buildSystemPrompt = (): string => {
@@ -362,7 +378,28 @@ export default function AiChatScreen({ navigation }: any) {
       setMessages(finalMessages);
 
       if (isTraining) {
-        const plan = extractTrainingPlanFromReply(reply);
+        let plan = extractTrainingPlanFromReply(reply);
+        // Some turns make the model forget the structured marker. If the user
+        // clearly asked to generate a plan but none was parsed, silently retry
+        // once asking only for the structured data.
+        if (!plan && looksLikePlanRequest(content)) {
+          try {
+            const retryReply = await chatWithDeepSeek(
+              settings.apiKey,
+              settings.model,
+              [
+                ...history,
+                { role: 'user', content },
+                { role: 'assistant', content: reply },
+                { role: 'user', content: '请只输出刚才生成的训练计划结构化数据：__PLAN_JSON__{"name":"...","notes":"...","estimatedDurationMinutes":...,"exercises":[{"name":"...","exerciseType":"weighted|bodyweight|cardio","sets":[{"reps":...,"weight":...}]}]}__END__，不要输出任何其他内容。' },
+              ],
+              buildSystemPrompt()
+            );
+            plan = extractTrainingPlanFromReply(retryReply);
+          } catch {
+            // ignore retry failure, fall through without a generated plan
+          }
+        }
         if (plan) {
           // Do NOT auto-save: wait for the user to tap "添加到计划库".
           setGeneratedPlan(plan);
@@ -524,30 +561,37 @@ export default function AiChatScreen({ navigation }: any) {
               </View>
             ) : (
               messages.map(m => (
-                <View
-                  key={m.id}
-                  style={[styles.bubbleRow, m.role === 'user' ? styles.userRow : styles.aiRow]}
-                >
-                  {m.role === 'assistant' && (
-                    <View style={[styles.aiAvatar, styles.aiAvatarSmall]}>
-                      <Text style={[styles.aiAvatarText, styles.aiAvatarTextSmall]}>AI</Text>
-                    </View>
-                  )}
-                  <View
-                    style={[
-                      styles.bubble,
-                      m.role === 'user' ? styles.userBubble : styles.aiBubble,
-                    ]}
-                  >
-                    <Text
+                <View key={m.id} style={styles.msgWrap}>
+                  <View style={[styles.bubbleRow, m.role === 'user' ? styles.userRow : styles.aiRow]}>
+                    {m.role === 'assistant' && (
+                      <View style={[styles.aiAvatar, styles.aiAvatarSmall]}>
+                        <Text style={[styles.aiAvatarText, styles.aiAvatarTextSmall]}>AI</Text>
+                      </View>
+                    )}
+                    <PressableScale
+                      onLongPress={() => copyMessage(m)}
+                      delayLongPress={350}
                       style={[
-                        styles.bubbleText,
-                        m.role === 'user' ? styles.userBubbleText : styles.aiBubbleText,
+                        styles.bubble,
+                        m.role === 'user' ? styles.userBubble : styles.aiBubble,
                       ]}
                     >
-                      {m.text}
-                    </Text>
+                      <Text
+                        style={[
+                          styles.bubbleText,
+                          m.role === 'user' ? styles.userBubbleText : styles.aiBubbleText,
+                        ]}
+                      >
+                        {m.text}
+                      </Text>
+                    </PressableScale>
                   </View>
+                  <PressableScale
+                    onPress={() => copyMessage(m)}
+                    style={[styles.copyBtn, m.role === 'user' ? styles.copyBtnUser : styles.copyBtnAi]}
+                  >
+                    <Text style={styles.copyBtnText}>{copiedId === m.id ? '已复制 ✓' : '复制'}</Text>
+                  </PressableScale>
                 </View>
               ))
             )}
@@ -759,6 +803,12 @@ const styles = StyleSheet.create({
   aiBubbleText: { color: Colors.textPrimary },
   typingBubble: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   typingText: { fontSize: 13, color: Colors.textMuted },
+
+  msgWrap: { marginBottom: Spacing.sm },
+  copyBtn: { alignSelf: 'flex-start', paddingHorizontal: 2, paddingVertical: 2, marginTop: 2 },
+  copyBtnUser: { alignSelf: 'flex-end', marginRight: 6 },
+  copyBtnAi: { marginLeft: 38 },
+  copyBtnText: { fontSize: 11, color: Colors.textMuted },
 
   inputBar: {
     flexDirection: 'row', alignItems: 'flex-end', gap: 8,
