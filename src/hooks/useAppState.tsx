@@ -22,7 +22,7 @@ interface AppContextType {
   plans: TrainingPlan[];
   foodDb: FoodItem[];
   todayDietEntries: DietEntry[];
-  todayTrainingLog: TrainingLog | null;
+  todayTrainingLogs: TrainingLog[];
   todayWorkout: Workout | null;
   historyTrainingLogs: TrainingLog[];
   historyDietLogs: DietLog[];
@@ -39,6 +39,7 @@ interface AppContextType {
   updateWorkout: (w: Workout) => Promise<void>;
   completeWorkout: (w?: Workout) => Promise<void>;
   discardWorkout: () => Promise<void>;
+  deleteTrainingLog: (logId: string) => Promise<void>;
   addDietEntry: (e: DietEntry) => Promise<void>;
   removeDietEntry: (i: number) => Promise<void>;
   replaceFoodDb: (items: FoodItem[]) => Promise<void>;
@@ -61,7 +62,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [plans, setPlans] = useState<TrainingPlan[]>([]);
   const [foodDb, setFoodDb] = useState<FoodItem[]>([]);
   const [todayDietEntries, setTodayDietEntries] = useState<DietEntry[]>([]);
-  const [todayTrainingLog, setTodayTrainingLog] = useState<TrainingLog | null>(null);
+  const [todayTrainingLogs, setTodayTrainingLogs] = useState<TrainingLog[]>([]);
   const [todayWorkout, setTodayWorkout] = useState<Workout | null>(null);
   const [historyTrainingLogs, setHistoryTrainingLogs] = useState<TrainingLog[]>([]);
   const [historyDietLogs, setHistoryDietLogs] = useState<DietLog[]>([]);
@@ -72,14 +73,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   todayRef.current = today;
 
   // Derived state
-  const isTrainingDay = !!(todayTrainingLog || todayWorkout);
+  const isTrainingDay = todayTrainingLogs.length > 0 || !!todayWorkout;
   const trainingEstimate = todayWorkout
     ? Calc.estimateWorkoutMetrics(profile, todayWorkout)
     : { volume: 0, calories: 0 };
   // While a workout is in progress, show its LIVE estimate; fall back to the
   // completed log only when there is no in-progress workout.
-  const trainingCal = todayWorkout ? trainingEstimate.calories : (todayTrainingLog?.calories ?? 0);
-  const trainingVol = todayWorkout ? trainingEstimate.volume : (todayTrainingLog?.volume ?? 0);
+  const trainingCal = todayWorkout
+    ? trainingEstimate.calories
+    : todayTrainingLogs.reduce((s, l) => s + (l.calories || 0), 0);
+  const trainingVol = todayWorkout
+    ? trainingEstimate.volume
+    : todayTrainingLogs.reduce((s, l) => s + (l.volume || 0), 0);
 
   // ---- Data Loading ----
 
@@ -89,7 +94,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       Storage.loadPlans(),
       Storage.loadFoodDb(),
       Storage.loadDietEntries(today),
-      Storage.loadTrainingLog(today),
+      Storage.loadTrainingLogsByDate(today),
       Storage.loadCurrentWorkout(today),
       Storage.loadTrainingLogs(),
       Storage.loadDietHistoryLogs(),
@@ -100,7 +105,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     // Do NOT re-seed defaults: an intentionally emptied library must stay empty.
     setFoodDb(fdb);
     setTodayDietEntries(dietEntries);
-    setTodayTrainingLog(trLog);
+    setTodayTrainingLogs(trLog);
     setTodayWorkout(workout);
     setHistoryTrainingLogs(trLogs);
     setHistoryDietLogs(dietLogs);
@@ -218,6 +223,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const metrics = Calc.estimateWorkoutMetrics(profile, workout);
     const completedSets = workout.sets.filter(s => s.completed);
     const log: TrainingLog = {
+      id: createId('log'),
       date: workout.date,
       planUsed: workout.sourcePlanName,
       durationMinutes: workout.durationMinutes,
@@ -227,11 +233,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     };
     await Storage.saveTrainingLog(log);
     await Storage.deleteCurrentWorkout(workout.date);
-    setTodayTrainingLog(log);
+    const todayLogs = await Storage.loadTrainingLogsByDate(workout.date);
+    setTodayTrainingLogs(todayLogs);
     setTodayWorkout(null);
     const logs = await Storage.loadTrainingLogs();
     setHistoryTrainingLogs(logs);
   }, [todayWorkout, profile]);
+
+  const deleteTrainingLog = useCallback(async (logId: string) => {
+    await Storage.deleteTrainingLogByDate(today, logId);
+    const todayLogs = await Storage.loadTrainingLogsByDate(today);
+    setTodayTrainingLogs(todayLogs);
+    const logs = await Storage.loadTrainingLogs();
+    setHistoryTrainingLogs(logs);
+  }, [today]);
 
   const discardWorkout = useCallback(async () => {
     await Storage.deleteCurrentWorkout(today);
@@ -262,7 +277,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const clearHistory = useCallback(async () => {
     await Storage.clearHistory();
     setTodayDietEntries([]);
-    setTodayTrainingLog(null);
+    setTodayTrainingLogs([]);
     setHistoryTrainingLogs([]);
     setHistoryDietLogs([]);
   }, []);
@@ -271,7 +286,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     await Storage.resetData();
     setProfile(DEFAULT_PROFILE);
     setTodayDietEntries([]);
-    setTodayTrainingLog(null);
+    setTodayTrainingLogs([]);
     setTodayWorkout(null);
     setHistoryTrainingLogs([]);
     setHistoryDietLogs([]);
@@ -306,11 +321,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }), []);
 
   const value: AppContextType = {
-    ready, profile, plans, foodDb, todayDietEntries, todayTrainingLog,
+    ready, profile, plans, foodDb, todayDietEntries, todayTrainingLogs,
     todayWorkout, historyTrainingLogs, historyDietLogs,
     weightHistory, isTrainingDay, trainingCal, trainingVol,
     refreshAll, updateProfile, upsertPlan, removePlan,
     startWorkoutFromPlan, updateWorkout, completeWorkout, discardWorkout,
+    deleteTrainingLog,
     addDietEntry, removeDietEntry, replaceFoodDb, saveWeightRecord,
     clearHistory, resetData, createBlankPlan, createBlankSet, createBlankExercise,
   };

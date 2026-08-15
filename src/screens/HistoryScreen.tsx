@@ -3,13 +3,13 @@
 // ============================================================
 
 import React, { useState, useMemo } from 'react';
-import { View, Text, ScrollView, StyleSheet, Modal, Platform } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, Modal, Platform, Alert } from 'react-native';
 import { useApp } from '../hooks/useAppState';
 import { Colors, Spacing, BorderRadius, Shadow, Typography } from '../theme';
 import { Calc, toR, getTodayKey, MEAL_LABELS, MEAL_TYPES } from '../utils/calculations';
 import * as Storage from '../storage/storage';
 import PressableScale from '../components/PressableScale';
-import { WorkoutSet, DietEntry } from '../types';
+import { WorkoutSet, DietEntry, TrainingLog } from '../types';
 
 const DAYS = ['日', '一', '二', '三', '四', '五', '六'];
 
@@ -44,13 +44,13 @@ export default function HistoryScreen() {
 
   // Build data map
   const dataMap = useMemo(() => {
-    const map: Record<string, { tr: any; di: any }> = {};
+    const map: Record<string, { trs: TrainingLog[]; di: any }> = {};
     historyTrainingLogs.forEach(l => {
-      if (!map[l.date]) map[l.date] = { tr: null, di: null };
-      map[l.date].tr = l;
+      if (!map[l.date]) map[l.date] = { trs: [], di: null };
+      map[l.date].trs.push(l);
     });
     historyDietLogs.forEach(l => {
-      if (!map[l.date]) map[l.date] = { tr: null, di: null };
+      if (!map[l.date]) map[l.date] = { trs: [], di: null };
       map[l.date].di = l;
     });
     return map;
@@ -116,14 +116,16 @@ export default function HistoryScreen() {
         {selectedDate && (
           <View style={styles.detail}>
             <Text style={styles.detailDate}>{selectedDate}</Text>
-            {selectedData?.tr ? (
+            {selectedData?.trs && selectedData.trs.length > 0 ? (
               <PressableScale style={styles.detailBlock} onPress={() => setPreviewVisible(true)}>
                 <View style={styles.detailHeaderRow}>
-                  <Text style={styles.detailTitle}>训练 · {selectedData.tr.planUsed}</Text>
+                  <Text style={styles.detailTitle}>
+                    训练 · {selectedData.trs.length > 1 ? `共 ${selectedData.trs.length} 次` : selectedData.trs[0].planUsed}
+                  </Text>
                   <Text style={styles.detailChevron}>›</Text>
                 </View>
                 <Text style={styles.detailMeta}>
-                  容量 {toR(selectedData.tr.volume)} · 消耗 {toR(selectedData.tr.calories)} 千卡 · {selectedData.tr.durationMinutes} 分钟
+                  {selectedData.trs.map(l => l.planUsed).join('、')} · 总消耗 {toR(selectedData.trs.reduce((s, l) => s + (l.calories || 0), 0))} 千卡
                 </Text>
               </PressableScale>
             ) : (
@@ -165,13 +167,26 @@ export default function HistoryScreen() {
             </View>
 
             <ScrollView contentContainerStyle={styles.previewContent}>
-              {selectedData?.tr && (
-                <View style={styles.previewSection}>
-                  <Text style={styles.previewSectionTitle}>训练 · {selectedData.tr.planUsed}</Text>
+              {selectedData?.trs && selectedData.trs.length > 0 && selectedData.trs.map(log => (
+                <View key={log.id} style={styles.previewSection}>
+                  <View style={styles.detailHeaderRow}>
+                    <Text style={styles.previewSectionTitle}>训练 · {log.planUsed}</Text>
+                    <PressableScale
+                      onPress={() => {
+                        Alert.alert('删除训练记录', `确定删除「${log.planUsed}」这条训练记录？`, [
+                          { text: '取消', style: 'cancel' },
+                          { text: '删除', style: 'destructive', onPress: () => app.deleteTrainingLog(log.id as string) },
+                        ]);
+                      }}
+                      style={styles.previewDeleteBtn}
+                    >
+                      <Text style={styles.previewDeleteText}>删除</Text>
+                    </PressableScale>
+                  </View>
                   <Text style={styles.previewMeta}>
-                    时长 {selectedData.tr.durationMinutes} 分钟 · 容量 {toR(selectedData.tr.volume)} · 消耗 {toR(selectedData.tr.calories)} 千卡
+                    时长 {log.durationMinutes} 分钟 · 容量 {toR(log.volume)} · 消耗 {toR(log.calories)} 千卡
                   </Text>
-                  {groupSetsByExercise(selectedData.tr.sets).map((g, i) => (
+                  {groupSetsByExercise(log.sets).map((g, i) => (
                     <View key={i} style={styles.previewGroup}>
                       <Text style={styles.previewGroupTitle}>{g.name}</Text>
                       {g.sets.map(s => (
@@ -182,7 +197,7 @@ export default function HistoryScreen() {
                     </View>
                   ))}
                 </View>
-              )}
+              ))}
 
               {selectedData?.di && (
                 <View style={styles.previewSection}>
@@ -207,7 +222,7 @@ export default function HistoryScreen() {
                 </View>
               )}
 
-              {!selectedData?.tr && !selectedData?.di && (
+              {(!selectedData?.trs || selectedData.trs.length === 0) && !selectedData?.di && (
                 <Text style={styles.previewEmpty}>这一天没有训练或饮食记录。</Text>
               )}
             </ScrollView>
@@ -293,6 +308,8 @@ const styles = StyleSheet.create({
   },
   previewSectionTitle: { fontSize: 15, fontWeight: '600', color: Colors.textPrimary },
   previewMeta: { fontSize: 12, color: Colors.textMuted, marginTop: 4, marginBottom: Spacing.md },
+  previewDeleteBtn: { paddingHorizontal: 8, paddingVertical: 4 },
+  previewDeleteText: { fontSize: 12, fontWeight: '500', color: Colors.danger },
   previewGroup: {
     backgroundColor: Colors.surfaceHover, borderRadius: BorderRadius.md,
     padding: Spacing.md, marginTop: Spacing.sm,

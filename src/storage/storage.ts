@@ -72,15 +72,36 @@ export async function deleteCurrentWorkout(date: string): Promise<void> {
 
 // ---- Training Logs ----
 
-export async function saveTrainingLog(log: TrainingLog): Promise<void> {
-  await AsyncStorage.setItem(key('training_logs/' + log.date + '.json'), JSON.stringify(log));
-}
-
-export async function loadTrainingLog(date: string): Promise<TrainingLog | null> {
+/**
+ * A day can hold MULTIPLE completed training logs. They are stored as an
+ * array under `training_logs/<date>.json`; the old single-object format is
+ * migrated automatically on read. Each log gets a stable id when missing.
+ */
+export async function loadTrainingLogsByDate(date: string): Promise<TrainingLog[]> {
   try {
     const raw = await AsyncStorage.getItem(key('training_logs/' + date + '.json'));
-    return raw ? JSON.parse(raw) : null;
-  } catch { return null; }
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    const list: TrainingLog[] = Array.isArray(parsed) ? parsed : [parsed];
+    return list.map((l, i) => ({ ...l, id: l.id || `${date}-${i}` }));
+  } catch { return []; }
+}
+
+export async function saveTrainingLogsByDate(date: string, logs: TrainingLog[]): Promise<void> {
+  await AsyncStorage.setItem(key('training_logs/' + date + '.json'), JSON.stringify(logs));
+}
+
+export async function saveTrainingLog(log: TrainingLog): Promise<void> {
+  const logs = await loadTrainingLogsByDate(log.date);
+  const idx = logs.findIndex(l => l.id === log.id);
+  if (idx >= 0) logs[idx] = log; else logs.push(log);
+  await saveTrainingLogsByDate(log.date, logs);
+}
+
+export async function deleteTrainingLogByDate(date: string, logId: string): Promise<void> {
+  const logs = await loadTrainingLogsByDate(date);
+  const next = logs.filter(l => l.id !== logId);
+  await saveTrainingLogsByDate(date, next);
 }
 
 export async function loadTrainingLogs(): Promise<TrainingLog[]> {
@@ -88,12 +109,18 @@ export async function loadTrainingLogs(): Promise<TrainingLog[]> {
     const allKeys = await AsyncStorage.getAllKeys();
     const logKeys = allKeys.filter(k => k.startsWith(key('training_logs/')));
     const entries = await AsyncStorage.getMany(logKeys);
-    return logKeys
-      .map(k => {
-        const v = entries[k];
-        return v ? JSON.parse(v) : null;
-      })
-      .filter((v): v is TrainingLog => v !== null)
+    const logs: TrainingLog[] = [];
+    for (const k of logKeys) {
+      const v = entries[k];
+      if (!v) continue;
+      try {
+        const parsed = JSON.parse(v);
+        if (Array.isArray(parsed)) logs.push(...parsed);
+        else logs.push(parsed);
+      } catch { /* skip corrupt entry */ }
+    }
+    return logs
+      .map(l => ({ ...l, id: l.id || `${l.date}-${Math.random().toString(36).slice(2, 8)}` }))
       .sort((a, b) => b.date.localeCompare(a.date));
   } catch { return []; }
 }

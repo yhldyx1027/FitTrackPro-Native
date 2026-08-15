@@ -11,7 +11,7 @@ import {
 import { useApp } from '../hooks/useAppState';
 import { Colors, Spacing, BorderRadius, Shadow, Typography } from '../theme';
 import { toR, fmtNum, parseNum, createId } from '../utils/calculations';
-import { TrainingPlan, Exercise, ExerciseType, WorkoutSet, PlanSet } from '../types';
+import { TrainingPlan, Exercise, ExerciseType, WorkoutSet, PlanSet, TrainingLog } from '../types';
 import PressableScale from '../components/PressableScale';
 import DecimalInput from '../components/DecimalInput';
 
@@ -28,13 +28,27 @@ export default function TrainingScreen({ navigation }: any) {
   const app = useApp();
   if (!app.ready) return null;
 
-  const { todayWorkout, todayTrainingLog, trainingCal, trainingVol, plans } = app;
+  const { todayWorkout, todayTrainingLogs, trainingCal, trainingVol, plans } = app;
   const [planEditorVisible, setPlanEditorVisible] = useState(false);
   const [workoutVisible, setWorkoutVisible] = useState(false);
 
   const handleStartWorkout = (plan: TrainingPlan) => {
+    if (todayWorkout) {
+      Alert.alert('已有进行中的训练', `当前「${todayWorkout.sourcePlanName}」还没结束，开始新训练会放弃它。确定继续？`, [
+        { text: '取消', style: 'cancel' },
+        { text: '开始新训练', style: 'destructive', onPress: () => { app.startWorkoutFromPlan(plan); setWorkoutVisible(true); } },
+      ]);
+      return;
+    }
     app.startWorkoutFromPlan(plan);
     setWorkoutVisible(true);
+  };
+
+  const handleDeleteLog = (log: TrainingLog) => {
+    Alert.alert('删除训练记录', `确定删除「${log.planUsed}」这条训练记录？`, [
+      { text: '取消', style: 'cancel' },
+      { text: '删除', style: 'destructive', onPress: () => app.deleteTrainingLog(log.id as string) },
+    ]);
   };
 
   const handleDeletePlan = (p: TrainingPlan) => {
@@ -62,12 +76,21 @@ export default function TrainingScreen({ navigation }: any) {
               </PressableScale>
             </View>
           </View>
-        ) : todayTrainingLog ? (
-          <View style={styles.workoutSummary}>
-            <Text style={styles.workoutName}>今天已完成训练</Text>
-            <Text style={styles.workoutMeta}>
-              {todayTrainingLog.planUsed} · 容量 {toR(todayTrainingLog.volume)} · 消耗 {toR(todayTrainingLog.calories)} 千卡
-            </Text>
+        ) : todayTrainingLogs.length > 0 ? (
+          <View>
+            <Text style={styles.workoutName}>今天已完成 {todayTrainingLogs.length} 次训练</Text>
+            {todayTrainingLogs.map(log => (
+              <View key={log.id} style={styles.logRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.workoutMeta}>
+                    {log.planUsed} · {log.durationMinutes}分钟 · 容量 {toR(log.volume)} · 消耗 {toR(log.calories)} 千卡
+                  </Text>
+                </View>
+                <PressableScale onPress={() => handleDeleteLog(log)} style={styles.planGhostBtn}>
+                  <Text style={[styles.planGhostText, { color: Colors.danger }]}>删除</Text>
+                </PressableScale>
+              </View>
+            ))}
           </View>
         ) : (
           <Text style={styles.emptyText}>今天还没有训练，当前按休息日饮食方案计算。</Text>
@@ -346,9 +369,13 @@ function WorkoutModal({ visible, onClose }: { visible: boolean; onClose: () => v
 
   // Timer with absolute timestamps (background-safe + survives app restart via startedAt)
   useEffect(() => {
-    if (!visible) return;
-    if (baseRef.current == null) {
-      baseRef.current = todayWorkout?.startedAt ?? Date.now();
+    if (!visible || !todayWorkout) return;
+    // A new workout (different startedAt) must reset the timer; toggling sets
+    // keeps the same startedAt so the elapsed time is preserved.
+    const st = todayWorkout.startedAt ?? Date.now();
+    if (baseRef.current !== st) {
+      baseRef.current = st;
+      setElapsed(0);
     }
     const tick = () => {
       if (baseRef.current != null) {
@@ -513,6 +540,10 @@ const styles = StyleSheet.create({
   workoutSummary: { gap: 8, paddingTop: Spacing.xs },
   workoutName: { fontSize: 16, fontWeight: '600', color: Colors.textPrimary, letterSpacing: -0.2 },
   workoutMeta: { fontSize: 13, color: Colors.textMuted },
+  logRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingVertical: 8, borderTopWidth: 1, borderTopColor: Colors.borderLight,
+  },
 
   // Plan cards
   planCard: {

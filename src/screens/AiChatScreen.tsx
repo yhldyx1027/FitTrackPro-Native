@@ -231,7 +231,7 @@ export default function AiChatScreen({ navigation }: any) {
         profile: app.profile,
         plans: app.plans,
         todayWorkout: app.todayWorkout,
-        todayTrainingLog: app.todayTrainingLog,
+        todayTrainingLogs: app.todayTrainingLogs,
         isTrainingDay: app.isTrainingDay,
         trainingCal: app.trainingCal,
         trainingVol: app.trainingVol,
@@ -244,7 +244,7 @@ export default function AiChatScreen({ navigation }: any) {
     const dctx: AiContext = {
       profile: app.profile,
       dietEntries: app.todayDietEntries,
-      trainingLog: app.todayTrainingLog,
+      trainingLogs: app.todayTrainingLogs,
       isTrainingDay: app.isTrainingDay,
       trainingCal: app.trainingCal,
       recentTrainingLogs,

@@ -19,8 +19,8 @@ export default function DietScreen({ navigation }: any) {
   const app = useApp();
   if (!app.ready) return null;
 
-  const { profile, todayTrainingLog, todayDietEntries, isTrainingDay, trainingCal, foodDb } = app;
-  const m = Calc.buildDashboardMetrics(profile, todayTrainingLog, todayDietEntries, isTrainingDay, trainingCal);
+  const { profile, todayTrainingLogs, todayDietEntries, isTrainingDay, trainingCal, foodDb } = app;
+  const m = Calc.buildDashboardMetrics(profile, todayTrainingLogs[todayTrainingLogs.length - 1] ?? null, todayDietEntries, isTrainingDay, trainingCal);
   const totals = Calc.dietTotals(todayDietEntries);
 
   const [addFoodTarget, setAddFoodTarget] = useState<FoodItem | null>(null);

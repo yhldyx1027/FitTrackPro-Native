@@ -81,8 +81,8 @@ export default function DashboardScreen({ navigation }: any) {
   const app = useApp();
   if (!app.ready) return <LoadingView />;
 
-  const { profile, todayTrainingLog, todayDietEntries, isTrainingDay, trainingCal, trainingVol, todayWorkout } = app;
-  const m = Calc.buildDashboardMetrics(profile, todayTrainingLog, todayDietEntries, isTrainingDay, trainingCal);
+  const { profile, todayTrainingLogs, todayDietEntries, isTrainingDay, trainingCal, trainingVol, todayWorkout } = app;
+  const m = Calc.buildDashboardMetrics(profile, todayTrainingLogs[todayTrainingLogs.length - 1] ?? null, todayDietEntries, isTrainingDay, trainingCal);
   const p = profile;
 
   const ringValues = {
@@ -97,7 +97,7 @@ export default function DashboardScreen({ navigation }: any) {
 
   const quickActions = [];
   if (missingFields > 0) quickActions.push({ t: '完善身体数据', d: `还差 ${missingFields} 项`, tab: 'SettingsPage', color: Colors.dotPurple });
-  if (!todayWorkout && !todayTrainingLog) quickActions.push({ t: '开始今日训练', d: '从计划库开始', tab: 'TrainingPage', color: Colors.dotOrange });
+  if (!todayWorkout && todayTrainingLogs.length === 0) quickActions.push({ t: '开始今日训练', d: '从计划库开始', tab: 'TrainingPage', color: Colors.dotOrange });
   if (todayDietEntries.length === 0) quickActions.push({ t: '记录第一餐', d: '热量和营养实时更新', tab: 'DietPage', color: Colors.dotBlue });
   quickActions.push({ t: '回看记录', d: '训练和饮食按日合并', tab: 'HistoryPage', color: Colors.dotGreen });
 
@@ -208,7 +208,7 @@ export default function DashboardScreen({ navigation }: any) {
         <View style={{ flex: 1, paddingRight: Spacing.lg }}>
           <Text style={styles.cardTitle}>训练快照</Text>
           <Text style={styles.cardSub}>容量按重量乘次数累计，热量按 MET 公式叠加强度修正</Text>
-          <SnapshotRow label="当前计划" value={todayTrainingLog?.planUsed ?? todayWorkout?.sourcePlanName ?? '尚未开始记录'} />
+          <SnapshotRow label="当前计划" value={todayTrainingLogs.map(l => l.planUsed).join('、') || todayWorkout?.sourcePlanName || '尚未开始记录'} />
           <SnapshotRow label="训练容量" value={`${toR(trainingVol)}`} />
           <SnapshotRow label="预计消耗" value={`${toR(trainingCal)} 千卡`} />
         </View>

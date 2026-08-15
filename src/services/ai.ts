@@ -30,7 +30,7 @@ export interface AiChatMessage {
 export interface AiContext {
   profile: Profile;
   dietEntries: DietEntry[];
-  trainingLog: TrainingLog | null;
+  trainingLogs: TrainingLog[];
   isTrainingDay: boolean;
   trainingCal: number;
   recentTrainingLogs: TrainingLog[];
@@ -50,7 +50,7 @@ export interface AiTrainingContext {
   profile: Profile;
   plans: TrainingPlan[];
   todayWorkout: Workout | null;
-  todayTrainingLog: TrainingLog | null;
+  todayTrainingLogs: TrainingLog[];
   isTrainingDay: boolean;
   trainingCal: number;
   trainingVol: number;
@@ -235,7 +235,7 @@ export function buildTrainingSystemPrompt(ctx: AiTrainingContext): string {
     '【今日状态】',
     `今日：${isTrainingDay ? '训练日' : '休息日'}`,
     isTrainingDay
-      ? `今日训练：${ctx.todayWorkout?.sourcePlanName ?? ctx.todayTrainingLog?.planUsed ?? '进行中'}｜实时容量 ${toR(trainingVol)}｜消耗 ${toR(trainingCal)} 千卡`
+      ? `今日训练：${ctx.todayWorkout?.sourcePlanName ?? (ctx.todayTrainingLogs.map(l => l.planUsed).join('、') || '进行中')}｜实时容量 ${toR(trainingVol)}｜消耗 ${toR(trainingCal)} 千卡`
       : '今天还没有训练，可以建议安排训练或休息恢复。',
     '',
     '【计划库现状】',

@@ -83,6 +83,7 @@ export interface Workout {
 }
 
 export interface TrainingLog {
+  id?: string;
   date: string;
   planUsed: string;
   durationMinutes: number;
