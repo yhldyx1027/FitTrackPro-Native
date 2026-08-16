@@ -58,27 +58,79 @@ export default function TrainingScreen({ navigation }: any) {
     ]);
   };
 
+  const now = new Date();
+  const dateLine = `${now.getMonth() + 1}月${now.getDate()}日 ${['周日','周一','周二','周三','周四','周五','周六'][now.getDay()]} · ${app.isTrainingDay ? '训练日' : '休息日'}`;
+  const todayDuration = todayWorkout?.durationMinutes ?? todayTrainingLogs.reduce((s, l) => s + (l.durationMinutes || 0), 0);
+
+  // Group in-progress sets by exercise for the workout card.
+  const workoutGroups: { name: string; weight: string; done: number; total: number }[] = [];
+  if (todayWorkout) {
+    const byEx = new Map<string, WorkoutSet[]>();
+    todayWorkout.sets.forEach(s => {
+      const k = s.exerciseId || s.exercise;
+      if (!byEx.has(k)) byEx.set(k, []);
+      byEx.get(k)!.push(s);
+    });
+    byEx.forEach(sets => {
+      const first = sets[0];
+      const wt = first?.exerciseType === 'cardio'
+        ? `${first.reps} 分钟`
+        : first?.exerciseType === 'bodyweight'
+          ? `自重 × ${first.reps} 次`
+          : `${first?.weight || 0}kg × ${first?.reps || 0} 次`;
+      workoutGroups.push({ name: first?.exercise || '动作', weight: wt, done: sets.filter(s => s.completed).length, total: sets.length });
+    });
+  }
+
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-      {/* Today's Status */}
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>今日训练</Text>
-        <Text style={styles.cardSub}>没有训练时视为休息日，饮食建议实时切换</Text>
-        {todayWorkout ? (
-          <View>
-            <View style={styles.workoutSummary}>
-              <Text style={styles.workoutName}>{todayWorkout.sourcePlanName}</Text>
-              <Text style={styles.workoutMeta}>
-                实时容量 {toR(trainingVol)} · 预计消耗 {toR(trainingCal)} 千卡
-              </Text>
-              <PressableScale style={styles.primaryBtn} onPress={() => setWorkoutVisible(true)}>
-                <Text style={styles.primaryBtnText}>继续训练</Text>
-              </PressableScale>
-            </View>
+      {/* Header */}
+      <Text style={styles.pageTitle}>训练</Text>
+      <Text style={styles.pageSub}>{dateLine}</Text>
+
+      {/* Today stats bar */}
+      <View style={styles.statsBar}>
+        {[
+          { v: `${toR(trainingCal)}`, lb: '消耗 kcal' },
+          { v: trainingVol >= 1000 ? `${(trainingVol / 1000).toFixed(1)}` : `${toR(trainingVol)}`, lb: '训练量' },
+          { v: `${toR(todayDuration)}`, lb: '时长 分' },
+        ].map((s, i) => (
+          <View key={i} style={styles.statsBarItem}>
+            <Text style={styles.statsBarValue}>{s.v}</Text>
+            <Text style={styles.statsBarLabel}>{s.lb}</Text>
           </View>
+        ))}
+      </View>
+
+      {/* Today's training card */}
+      <View style={styles.todayCard}>
+        {todayWorkout ? (
+          <>
+            <View style={styles.todayCardAccent} />
+            <Text style={styles.todayCardTitle}>{todayWorkout.sourcePlanName} · 进行中</Text>
+            <View style={styles.todaySetsWrap}>
+              {workoutGroups.slice(0, 5).map((g, i) => (
+                <View key={i} style={styles.todaySetRow}>
+                  <View style={styles.todaySetChip}><Text style={styles.todaySetChipText}>第 {i + 1} 组</Text></View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.todaySetName}>{g.name}</Text>
+                    <Text style={styles.todaySetWeight}>{g.weight}</Text>
+                  </View>
+                  <View style={styles.todaySetDots}>
+                    {Array.from({ length: g.total }).map((_, k) => (
+                      <View key={k} style={[styles.todaySetDot, k < g.done && styles.todaySetDotDone]} />
+                    ))}
+                  </View>
+                </View>
+              ))}
+            </View>
+            <PressableScale style={styles.todayCardBtn} onPress={() => setWorkoutVisible(true)}>
+              <Text style={styles.todayCardBtnText}>记录完成 · 保存</Text>
+            </PressableScale>
+          </>
         ) : todayTrainingLogs.length > 0 ? (
           <View>
-            <Text style={styles.workoutName}>今天已完成 {todayTrainingLogs.length} 次训练</Text>
+            <Text style={styles.todayCardTitle}>今天已完成 {todayTrainingLogs.length} 次训练</Text>
             {todayTrainingLogs.map(log => (
               <View key={log.id} style={styles.logRow}>
                 <View style={{ flex: 1 }}>
@@ -93,7 +145,10 @@ export default function TrainingScreen({ navigation }: any) {
             ))}
           </View>
         ) : (
-          <Text style={styles.emptyText}>今天还没有训练，当前按休息日饮食方案计算。</Text>
+          <View style={styles.todayEmpty}>
+            <Text style={styles.todayCardTitle}>今天还没有训练</Text>
+            <Text style={styles.workoutMeta}>从下方计划库开始，或在 AI 训练助手生成新计划</Text>
+          </View>
         )}
       </View>
 
@@ -511,6 +566,40 @@ function WorkoutModal({ visible, onClose }: { visible: boolean; onClose: () => v
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Colors.background },
   content: { padding: Spacing.lg, paddingBottom: Spacing.section },
+
+  pageTitle: { fontSize: 27, fontWeight: '700', color: Colors.textPrimary, letterSpacing: -0.8, marginTop: Spacing.md },
+  pageSub: { fontSize: 13, color: Colors.textMuted, marginTop: 4, marginBottom: Spacing.lg },
+
+  statsBar: {
+    flexDirection: 'row', backgroundColor: Colors.surface, borderRadius: BorderRadius.lg,
+    borderWidth: 1, borderColor: Colors.borderLight, marginBottom: Spacing.lg, ...Shadow.card,
+  },
+  statsBarItem: { flex: 1, alignItems: 'center', paddingVertical: Spacing.md },
+  statsBarValue: { fontSize: 18, fontWeight: '700', color: Colors.textPrimary, fontVariant: ['tabular-nums'] as any },
+  statsBarLabel: { fontSize: 11, color: Colors.textMuted, marginTop: 3 },
+
+  todayCard: {
+    backgroundColor: Colors.surface, borderRadius: BorderRadius.xxl,
+    padding: Spacing.xl, marginBottom: Spacing.lg, ...Shadow.elevated,
+    borderWidth: 1, borderColor: Colors.borderLight, position: 'relative',
+  },
+  todayCardAccent: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 6, borderTopLeftRadius: BorderRadius.xxl, borderBottomLeftRadius: BorderRadius.xxl, backgroundColor: Colors.dotGreen },
+  todayCardTitle: { fontSize: 16, fontWeight: '700', color: Colors.textPrimary, letterSpacing: -0.3, marginBottom: Spacing.sm },
+  todaySetsWrap: { marginBottom: Spacing.md },
+  todaySetRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8 },
+  todaySetChip: { backgroundColor: Colors.accentLight, borderRadius: BorderRadius.full, paddingHorizontal: 12, paddingVertical: 6 },
+  todaySetChipText: { fontSize: 11, fontWeight: '700', color: Colors.accent },
+  todaySetName: { fontSize: 14, fontWeight: '600', color: Colors.textPrimary },
+  todaySetWeight: { fontSize: 11.5, color: Colors.textMuted, marginTop: 2 },
+  todaySetDots: { flexDirection: 'row', gap: 5 },
+  todaySetDot: { width: 9, height: 9, borderRadius: 4.5, borderWidth: 1.5, borderColor: Colors.border },
+  todaySetDotDone: { backgroundColor: Colors.dotGreen, borderColor: Colors.dotGreen },
+  todayCardBtn: {
+    backgroundColor: Colors.accent, borderRadius: BorderRadius.full,
+    paddingVertical: 13, alignItems: 'center', ...Shadow.button,
+  },
+  todayCardBtnText: { fontSize: 14, fontWeight: '700', color: '#fff' },
+  todayEmpty: { paddingVertical: Spacing.sm },
 
   card: {
     backgroundColor: Colors.surface, borderRadius: BorderRadius.xxl,

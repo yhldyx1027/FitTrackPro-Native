@@ -4,6 +4,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { View, Text, ScrollView, StyleSheet, Modal, Platform, Alert } from 'react-native';
+import Svg, { Path, Circle } from 'react-native-svg';
 import { useApp } from '../hooks/useAppState';
 import { Colors, Spacing, BorderRadius, Shadow, Typography } from '../theme';
 import { Calc, toR, getTodayKey, MEAL_LABELS, MEAL_TYPES } from '../utils/calculations';
@@ -59,6 +60,23 @@ export default function HistoryScreen() {
   const firstDay = new Date(year, month - 1, 1).getDay();
   const daysInMonth = new Date(year, month, 0).getDate();
   const todayStr = getTodayKey();
+  const weekAgo = getTodayKey(new Date(Date.now() - 7 * 86400000));
+  const last7Logs = historyTrainingLogs.filter(l => l.date >= weekAgo);
+  const recentLogs = historyTrainingLogs.slice(0, 6);
+  const weights = [...app.weightHistory].sort((a, b) => a.date.localeCompare(b.date)).slice(-7);
+
+  const DOT_COLORS = ['#1f8a70', '#2f6c8f', '#dc6b2f', '#7c5ce7', '#c8476c', '#dc9b3f'];
+
+  // Weight trend chart geometry
+  const chartW = 340, chartH = 110, padX = 14, padY = 14;
+  const wMin = weights.length > 1 ? Math.min(...weights.map(w => w.weight)) : 0;
+  const wMax = weights.length > 1 ? Math.max(...weights.map(w => w.weight)) : 0;
+  const wSpan = Math.max(wMax - wMin, 0.5);
+  const wPts = weights.map((w, i) => ({
+    x: padX + (chartW - padX * 2) * (weights.length === 1 ? 0.5 : i / (weights.length - 1)),
+    y: padY + (chartH - padY * 2) * (1 - (w.weight - wMin) / wSpan),
+    ...w,
+  }));
 
   const shiftMonth = (dir: number) => {
     let m = month + dir;
@@ -76,6 +94,12 @@ export default function HistoryScreen() {
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
+      {/* Header */}
+      <Text style={styles.pageTitle}>历史记录</Text>
+      <Text style={styles.pageSub}>
+        近 7 天 · 训练 {last7Logs.length} 次 · 消耗 {toR(last7Logs.reduce((s, l) => s + (l.calories || 0), 0))} kcal
+      </Text>
+
       <View style={styles.card}>
         {/* Month nav */}
         <View style={styles.monthNav}>
@@ -147,8 +171,62 @@ export default function HistoryScreen() {
           </View>
         )}
         {!selectedDate && <Text style={styles.selectHint}>点击日期查看详情</Text>}
+      </View>
 
-        {/* Preview Modal */}
+      {/* Weight trend */}
+      {weights.length > 1 && (
+        <View style={styles.card}>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionTitle}>体重趋势</Text>
+            <Text style={styles.sectionValue}>{weights[weights.length - 1].weight} kg</Text>
+          </View>
+          <Svg width={chartW} height={chartH} viewBox={`0 0 ${chartW} ${chartH}`}>
+            <Path
+              d={`M${wPts.map(p => `${p.x},${p.y}`).join(' L')} L${wPts[wPts.length - 1].x},${chartH - padY} L${wPts[0].x},${chartH - padY} Z`}
+              fill="#e5f2ed"
+            />
+            <Path
+              d={`M${wPts.map(p => `${p.x},${p.y}`).join(' L')}`}
+              stroke={Colors.accent}
+              strokeWidth={2.5}
+              fill="none"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+            {wPts.map((p, i) => (
+              <Circle key={i} cx={p.x} cy={p.y} r={i === wPts.length - 1 ? 4 : 3} fill={i === wPts.length - 1 ? Colors.accent : Colors.surface} stroke={Colors.accent} strokeWidth={1.8} />
+            ))}
+          </Svg>
+          <View style={styles.chartLabels}>
+            {weights.map((w, i) => (
+              <Text key={i} style={styles.chartLabel}>{w.date.slice(5).replace('-', '/')}</Text>
+            ))}
+          </View>
+        </View>
+      )}
+
+      {/* Recent training records */}
+      <Text style={styles.sectionTitle}>训练记录</Text>
+      {recentLogs.length === 0 ? (
+        <Text style={styles.noData}>还没有训练记录。</Text>
+      ) : (
+        recentLogs.map((log, i) => (
+          <PressableScale
+            key={log.id}
+            style={styles.logCard}
+            onPress={() => { setSelectedDate(log.date); setPreviewVisible(true); }}
+          >
+            <View style={[styles.logDot, { backgroundColor: DOT_COLORS[i % DOT_COLORS.length] }]} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.logDay}>{log.date.slice(5).replace('-', '月')}日</Text>
+              <Text style={styles.logName} numberOfLines={1}>{log.planUsed} · {log.sets.slice(0, 3).map(s => s.exercise).join(' / ')}</Text>
+            </View>
+            <Text style={styles.logKcal}>{toR(log.calories)} kcal</Text>
+          </PressableScale>
+        ))
+      )}
+
+      {/* Preview Modal */}
         <Modal
           visible={previewVisible}
           animationType="slide"
@@ -228,7 +306,6 @@ export default function HistoryScreen() {
             </ScrollView>
           </View>
         </Modal>
-      </View>
     </ScrollView>
   );
 }
@@ -236,6 +313,25 @@ export default function HistoryScreen() {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Colors.background },
   content: { padding: Spacing.lg, paddingBottom: Spacing.section },
+
+  pageTitle: { fontSize: 27, fontWeight: '700', color: Colors.textPrimary, letterSpacing: -0.8, marginTop: Spacing.md, marginBottom: 4 },
+  pageSub: { fontSize: 13, color: Colors.textMuted, marginBottom: Spacing.lg },
+  sectionHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.md },
+  sectionTitle: { fontSize: 16, fontWeight: '700', color: Colors.textPrimary, letterSpacing: -0.3, marginBottom: Spacing.sm },
+  sectionValue: { fontSize: 13, fontWeight: '700', color: Colors.accent },
+  chartLabels: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 4 },
+  chartLabel: { fontSize: 9.5, color: Colors.textMuted },
+
+  logCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: Colors.surface, borderRadius: BorderRadius.lg,
+    padding: Spacing.md, marginBottom: Spacing.sm, ...Shadow.card,
+    borderWidth: 1, borderColor: Colors.borderLight,
+  },
+  logDot: { width: 12, height: 12, borderRadius: 6 },
+  logDay: { fontSize: 13, fontWeight: '700', color: Colors.textPrimary },
+  logName: { fontSize: 11, color: Colors.textMuted, marginTop: 2 },
+  logKcal: { fontSize: 12.5, fontWeight: '700', color: Colors.textSecondary },
 
   card: {
     backgroundColor: Colors.surface, borderRadius: BorderRadius.xxl,

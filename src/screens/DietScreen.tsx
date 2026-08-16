@@ -26,6 +26,8 @@ export default function DietScreen({ navigation }: any) {
   const [addFoodTarget, setAddFoodTarget] = useState<FoodItem | null>(null);
   const [addMeal, setAddMeal] = useState<MealType | null>(null);
   const [addServings, setAddServings] = useState('1');
+  const [foodPickerVisible, setFoodPickerVisible] = useState(false);
+  const [expandedMeal, setExpandedMeal] = useState<MealType | null>(null);
   const [foodEditorVisible, setFoodEditorVisible] = useState(false);
   const [msg, setMsg] = useState('');
 
@@ -57,6 +59,14 @@ export default function DietScreen({ navigation }: any) {
     showMsg('已删除');
   };
 
+  const intakePct = m.recommendedCalories > 0 ? Math.min(totals.calories / m.recommendedCalories, 1) : 0;
+  const remaining = Math.max(m.recommendedCalories - totals.calories, 0);
+  const now = new Date();
+  const dateLine = `${now.getMonth() + 1}月${now.getDate()}日 ${['周日','周一','周二','周三','周四','周五','周六'][now.getDay()]} · 摄入进度 ${toR(intakePct * 100)}%`;
+  const MEAL_COLORS: Record<string, string> = {
+    breakfast: '#dc9b3f', lunch: '#1f8a70', dinner: '#2f6c8f', snack: '#7c5ce7',
+  };
+
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
       {/* Banner */}
@@ -66,87 +76,47 @@ export default function DietScreen({ navigation }: any) {
         </View>
       )}
 
-      {/* Hero Tiles */}
-      <View style={styles.heroRow}>
-        <View style={[styles.heroTile, styles.heroDark]}>
-          <Text style={styles.heroLabel}>建议摄入</Text>
-          <Text style={[styles.heroValue, { color: '#fff' }]}>{toR(m.recommendedCalories)}</Text>
-          <Text style={[styles.heroMeta, { color: 'rgba(255,255,255,0.6)' }]}>千卡 / 今天</Text>
+      {/* Header */}
+      <Text style={styles.pageTitle}>饮食管理</Text>
+      <Text style={styles.pageSub}>{dateLine}</Text>
+
+      {/* Macro card */}
+      <View style={styles.macroCard}>
+        <Text style={styles.macroLabel}>今日摄入</Text>
+        <View style={styles.macroValueRow}>
+          <Text style={styles.macroValue}>{toR(totals.calories)}</Text>
+          <Text style={styles.macroTarget}>/ {toR(m.recommendedCalories)} kcal</Text>
         </View>
-        <View style={styles.heroTile}>
-          <Text style={styles.heroLabel}>已完成</Text>
-          <Text style={styles.heroValue}>{toR(totals.calories)}</Text>
-          <Text style={styles.heroMeta}>千卡 / 当前</Text>
+        <View style={styles.macroTrack}>
+          <View style={[styles.macroFill, { width: `${intakePct * 100}%` }]} />
         </View>
+        <Text style={styles.macroRemain}>{remaining > 0 ? `剩余 ${toR(remaining)} kcal` : '已超目标'}</Text>
       </View>
 
-      {/* AI Assistant Entry */}
-      <PressableScale style={styles.aiEntry} onPress={() => navigation.navigate('AiChatPage')}>
-        <View style={styles.aiEntryBadge}>
-          <Text style={styles.aiEntryBadgeText}>AI</Text>
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.aiEntryTitle}>AI 饮食助手</Text>
-          <Text style={styles.aiEntrySub}>问热量、配碳蛋脂、安排三餐</Text>
-        </View>
-        <Text style={styles.aiEntryArrow}>›</Text>
+      {/* Add meal button */}
+      <PressableScale style={styles.addMealBtn} onPress={() => setFoodPickerVisible(true)}>
+        <Text style={styles.addMealBtnText}>＋ 添加餐次</Text>
       </PressableScale>
 
-      {/* Progress */}
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>摄入进度</Text>
-        <Text style={styles.cardSub}>按训练/休息日方案实时更新</Text>
-        <ProgressBar label="总热量" current={totals.calories} target={m.recommendedCalories} color="#dc6b2f" />
-        <ProgressBar label="碳水（克）" current={totals.carbs} target={m.targetMacros.carbs} color="#2f6c8f" />
-        <ProgressBar label="蛋白质（克）" current={totals.protein} target={m.targetMacros.protein} color="#1f8a70" />
-        <ProgressBar label="脂肪（克）" current={totals.fat} target={m.targetMacros.fat} color="#dc6b2f" />
-      </View>
-
-      {/* Meal Selection & Food Search */}
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>记录餐次</Text>
-        <Text style={styles.cardSub}>点食物旁的“添加”，在弹出的窗口选择餐次和份数</Text>
-
-        {/* Full food library */}
-        <Text style={styles.formLabel}>食物库</Text>
-        {foodDb.length === 0 ? (
-          <Text style={styles.dropdownEmpty}>食物库为空，先到“今日已吃”点“管理食物库”添加食物。</Text>
-        ) : (
-          foodDb.map((f, i) => (
-            <View key={i} style={styles.foodRow}>
-              <View style={{ flex: 1, paddingRight: Spacing.md }}>
-                <Text style={styles.entryName}>{f.name}</Text>
-                <Text style={styles.entryMeta}>{f.calories}千卡 | 碳{f.carbs} 蛋{f.protein} 脂{f.fat}</Text>
-              </View>
-              <PressableScale style={styles.addBtn} onPress={() => openAddModal(f)}>
-                <Text style={styles.addBtnText}>添加</Text>
-              </PressableScale>
+      {/* Meal cards */}
+      {MEAL_TYPES.map(mt => {
+        const entries = todayDietEntries.map((e, i) => ({ ...e, originalIndex: i })).filter(e => e.mealType === mt);
+        if (entries.length === 0) return null;
+        const kcal = entries.reduce((s, e) => s + e.calories * e.servings, 0);
+        const expanded = expandedMeal === mt;
+        return (
+          <PressableScale key={mt} style={styles.mealCard} onPress={() => setExpandedMeal(expanded ? null : mt)}>
+            <View style={[styles.mealCircle, { backgroundColor: MEAL_COLORS[mt] }]}>
+              <Text style={styles.mealCircleText}>{MEAL_LABELS[mt][0]}</Text>
             </View>
-          ))
-        )}
-      </View>
-
-      {/* Today's Entries */}
-      <View style={styles.card}>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-          <View>
-            <Text style={styles.cardTitle}>今日已吃</Text>
-            <Text style={styles.cardSub}>按餐次分组查看</Text>
-          </View>
-          <PressableScale onPress={() => setFoodEditorVisible(true)}>
-            <Text style={{ fontSize: 13, fontWeight: '500', color: Colors.accent }}>管理食物库</Text>
-          </PressableScale>
-        </View>
-        {todayDietEntries.length === 0 ? (
-          <Text style={styles.emptyText}>今天还没有饮食记录。</Text>
-        ) : (
-          MEAL_TYPES.map(mt => {
-            const entries = todayDietEntries.map((e, i) => ({ ...e, originalIndex: i })).filter(e => e.mealType === mt);
-            if (entries.length === 0) return null;
-            return (
-              <View key={mt} style={styles.mealSection}>
-                <Text style={styles.mealTitle}>{MEAL_LABELS[mt]}</Text>
-                {entries.map((entry) => (
+            <View style={{ flex: 1 }}>
+              <Text style={styles.mealCardTitle}>{MEAL_LABELS[mt]}</Text>
+              <Text style={styles.mealCardSub}>{entries.length} 条 · 共 {toR(kcal)} 千卡</Text>
+            </View>
+            <Text style={styles.mealChevron}>{expanded ? '▾' : '›'}</Text>
+            {expanded && (
+              <View style={styles.mealEntries}>
+                {entries.map(entry => (
                   <View key={entry.originalIndex} style={styles.entryItem}>
                     <View style={styles.entryHeader}>
                       <Text style={styles.entryName}>{entry.name} × {entry.servings}</Text>
@@ -160,10 +130,64 @@ export default function DietScreen({ navigation }: any) {
                   </View>
                 ))}
               </View>
-            );
-          })
-        )}
-      </View>
+            )}
+          </PressableScale>
+        );
+      })}
+      {todayDietEntries.length === 0 && (
+        <Text style={styles.emptyText}>今天还没有饮食记录，点「添加餐次」开始记录。</Text>
+      )}
+
+      {/* AI banner */}
+      <PressableScale style={styles.aiBanner} onPress={() => navigation.navigate('AiChatPage')}>
+        <View style={styles.aiBannerAccent} />
+        <View style={{ flex: 1 }}>
+          <Text style={styles.aiBannerTitle}>AI 饮食助手</Text>
+          <Text style={styles.aiBannerTip} numberOfLines={1}>
+            {todayDietEntries.length > 0 ? `已记录 ${todayDietEntries.length} 条，还可再吃 ${toR(remaining)} 千卡` : '问热量、配三餐，或直接告诉我你吃了什么'}
+          </Text>
+        </View>
+        <Text style={styles.aiBannerArrow}>›</Text>
+      </PressableScale>
+
+      {/* Food Picker Modal (from 添加餐次) */}
+      <Modal
+        visible={foodPickerVisible}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setFoodPickerVisible(false)}
+      >
+        <KeyboardAvoidingView style={styles.modalContainer} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+          <View style={styles.modalHeader}>
+            <PressableScale onPress={() => setFoodPickerVisible(false)} style={styles.modalIconBtn}><Text style={styles.modalBack}>←</Text></PressableScale>
+            <Text style={styles.modalTitle}>食物库</Text>
+            <PressableScale onPress={() => setFoodEditorVisible(true)} style={styles.modalIconBtn}>
+              <Text style={styles.pickerManage}>管理</Text>
+            </PressableScale>
+          </View>
+          <ScrollView style={styles.modalBody} contentContainerStyle={{ padding: Spacing.lg, paddingBottom: Spacing.section }} keyboardShouldPersistTaps="handled">
+            <Text style={styles.formLabel}>选择要添加的食物</Text>
+            {foodDb.length === 0 ? (
+              <Text style={styles.dropdownEmpty}>食物库为空，先点右上角「管理」添加食物。</Text>
+            ) : (
+              foodDb.map((f, i) => (
+                <View key={i} style={styles.foodRow}>
+                  <View style={{ flex: 1, paddingRight: Spacing.md }}>
+                    <Text style={styles.entryName}>{f.name}</Text>
+                    <Text style={styles.entryMeta}>{f.calories}千卡 | 碳{f.carbs} 蛋{f.protein} 脂{f.fat}</Text>
+                  </View>
+                  <PressableScale
+                    style={styles.addBtn}
+                    onPress={() => { setFoodPickerVisible(false); openAddModal(f); }}
+                  >
+                    <Text style={styles.addBtnText}>添加</Text>
+                  </PressableScale>
+                </View>
+              ))
+            )}
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </Modal>
 
       {/* Food DB Editor Modal */}
       <FoodEditorModal visible={foodEditorVisible} onClose={() => setFoodEditorVisible(false)} />
@@ -374,6 +398,55 @@ function ProgressBar({ label, current, target, color }: { label: string; current
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Colors.background },
   content: { padding: Spacing.lg, paddingBottom: Spacing.section },
+
+  pageTitle: { fontSize: 27, fontWeight: '700', color: Colors.textPrimary, letterSpacing: -0.8, marginTop: Spacing.md },
+  pageSub: { fontSize: 13, color: Colors.textMuted, marginTop: 4, marginBottom: Spacing.lg },
+
+  macroCard: {
+    backgroundColor: Colors.surface, borderRadius: BorderRadius.xxl,
+    padding: Spacing.xxl, marginBottom: Spacing.lg, ...Shadow.elevated,
+    borderWidth: 1, borderColor: Colors.borderLight,
+  },
+  macroLabel: { fontSize: 13, color: Colors.textSecondary },
+  macroValueRow: { flexDirection: 'row', alignItems: 'baseline', gap: 6, marginTop: 6 },
+  macroValue: { fontSize: 34, fontWeight: '700', color: Colors.textPrimary, letterSpacing: -0.8, fontVariant: ['tabular-nums'] as any },
+  macroTarget: { fontSize: 13, color: Colors.textMuted },
+  macroTrack: { height: 10, backgroundColor: '#eeeae4', borderRadius: 5, overflow: 'hidden', marginTop: Spacing.lg },
+  macroFill: { height: '100%', borderRadius: 5, backgroundColor: Colors.accent },
+  macroRemain: { fontSize: 11, color: Colors.textMuted, marginTop: Spacing.sm },
+
+  addMealBtn: {
+    backgroundColor: Colors.surface, borderRadius: BorderRadius.xl,
+    borderWidth: 1, borderColor: Colors.border, paddingVertical: 14,
+    alignItems: 'center', marginBottom: Spacing.lg, ...Shadow.card,
+  },
+  addMealBtnText: { fontSize: 14, fontWeight: '600', color: Colors.accent },
+
+  mealCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: Colors.surface, borderRadius: BorderRadius.xl,
+    padding: Spacing.lg, marginBottom: Spacing.sm, ...Shadow.card,
+    borderWidth: 1, borderColor: Colors.borderLight, flexWrap: 'wrap',
+  },
+  mealCircle: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  mealCircleText: { fontSize: 14, fontWeight: '700', color: '#fff' },
+  mealCardTitle: { fontSize: 15, fontWeight: '700', color: Colors.textPrimary },
+  mealCardSub: { fontSize: 11.5, color: Colors.textMuted, marginTop: 3 },
+  mealChevron: { fontSize: 20, color: Colors.textMuted },
+  mealEntries: { flexBasis: '100%', marginTop: Spacing.sm, borderTopWidth: 1, borderTopColor: Colors.borderLight, paddingTop: Spacing.sm },
+
+  aiBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: Colors.surface, borderRadius: BorderRadius.xl,
+    padding: Spacing.lg, marginTop: Spacing.lg, ...Shadow.card,
+    borderWidth: 1, borderColor: Colors.borderLight,
+  },
+  aiBannerAccent: { width: 6, borderRadius: 3, alignSelf: 'stretch', backgroundColor: Colors.dotPurple },
+  aiBannerTitle: { fontSize: 15, fontWeight: '700', color: Colors.textPrimary },
+  aiBannerTip: { fontSize: 12, color: Colors.textSecondary, marginTop: 3 },
+  aiBannerArrow: { fontSize: 22, color: Colors.textMuted, marginRight: 4 },
+
+  pickerManage: { fontSize: 13, fontWeight: '500', color: Colors.accent },
 
   banner: {
     backgroundColor: Colors.accentLight, paddingVertical: Spacing.md, paddingHorizontal: Spacing.lg,

@@ -107,13 +107,17 @@ export default function SettingsScreen({ navigation }: any) {
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
+      {/* Header */}
+      <Text style={styles.pageTitle}>设置</Text>
+
       {msg !== '' && (
         <View style={styles.banner}>
           <Text style={styles.bannerText}>{msg}</Text>
         </View>
       )}
 
-      {/* Profile */}
+      {/* 身体数据 */}
+      <Text style={styles.sectionTitle}>身体数据</Text>
       <View style={styles.card}>
         <Text style={styles.cardTitle}>身体数据</Text>
         <Text style={styles.cardSub}>这些数值直接影响 BMR、TDEE 和饮食建议。</Text>
@@ -185,7 +189,8 @@ export default function SettingsScreen({ navigation }: any) {
         )}
       </View>
 
-      {/* AI Assistant */}
+      {/* AI 助手 */}
+      <Text style={styles.sectionTitle}>AI 助手</Text>
       <View style={styles.card}>
         <Text style={styles.cardTitle}>AI 助手</Text>
         <Text style={styles.cardSub}>用 DeepSeek 查询食物热量、碳蛋脂，或生成/优化训练计划。API Key 仅保存在本机。</Text>
@@ -259,22 +264,22 @@ export default function SettingsScreen({ navigation }: any) {
         )}
       </View>
 
-      {/* Storage */}
+      {/* 数据与隐私 */}
+      <Text style={styles.sectionTitle}>数据与隐私</Text>
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>本地存储</Text>
-        <Text style={styles.cardSub}>数据仅保存在此设备。核心功能离线可用。</Text>
-        <View style={styles.storagePath}>
-          <Text style={styles.storagePathText}>AsyncStorage://fittrack-pro</Text>
-        </View>
-        <PressableScale style={styles.outlineBtn} onPress={() => { app.refreshAll(); showMsg('本地数据已重新读取'); }}>
-          <Text style={styles.outlineBtnText}>重新读取本地数据</Text>
+        <PressableScale style={styles.settingRow} onPress={() => { app.refreshAll(); showMsg('本地数据已重新读取'); }}>
+          <Text style={styles.settingRowLabel}>重新读取本地数据</Text>
+          <Text style={styles.settingRowChevron}>›</Text>
         </PressableScale>
-        <PressableScale style={styles.warnBtn} onPress={handleClearHistory}>
-          <Text style={styles.warnBtnText}>清理历史记录</Text>
+        <PressableScale style={styles.settingRow} onPress={handleClearHistory}>
+          <Text style={styles.settingRowLabel}>清理历史记录</Text>
+          <Text style={styles.settingRowChevron}>›</Text>
         </PressableScale>
-        <PressableScale style={styles.dangerBtn} onPress={handleReset}>
-          <Text style={styles.dangerBtnText}>重置数据（保留计划和食物库）</Text>
+        <PressableScale style={styles.settingRow} onPress={handleReset}>
+          <Text style={[styles.settingRowLabel, { color: Colors.danger }]}>重置数据（保留计划和食物库）</Text>
+          <Text style={styles.settingRowChevron}>›</Text>
         </PressableScale>
+        <Text style={styles.storagePathText}>数据仅保存在此设备 · AsyncStorage://fittrack-pro</Text>
       </View>
     </ScrollView>
   );
@@ -283,6 +288,17 @@ export default function SettingsScreen({ navigation }: any) {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Colors.background },
   content: { padding: Spacing.lg, paddingBottom: Spacing.section },
+
+  pageTitle: { fontSize: 27, fontWeight: '700', color: Colors.textPrimary, letterSpacing: -0.8, marginTop: Spacing.md, marginBottom: Spacing.lg },
+  sectionTitle: { fontSize: 13, color: Colors.textMuted, marginTop: Spacing.sm, marginBottom: Spacing.sm },
+
+  settingRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingVertical: 14, borderTopWidth: 1, borderTopColor: Colors.borderLight,
+  },
+  settingRowLabel: { fontSize: 14, color: Colors.textPrimary, fontWeight: '500' },
+  settingRowChevron: { fontSize: 18, color: Colors.textMuted },
+  storagePathText: { fontSize: 11, color: Colors.textMuted, marginTop: Spacing.sm, textAlign: 'center' },
 
   banner: {
     backgroundColor: Colors.accentLight, paddingVertical: Spacing.md, paddingHorizontal: Spacing.lg,
@@ -353,7 +369,6 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surfaceHover, borderRadius: BorderRadius.md,
     padding: Spacing.md, marginBottom: Spacing.md, alignItems: 'center',
   },
-  storagePathText: { fontSize: 12, color: Colors.textMuted, fontFamily: 'monospace' },
 
   aiStatusRow: {
     flexDirection: 'row', alignItems: 'center', gap: 8,

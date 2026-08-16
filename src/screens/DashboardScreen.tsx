@@ -10,7 +10,7 @@ import {
 import Svg, { G, Path } from 'react-native-svg';
 import { useApp } from '../hooks/useAppState';
 import { Colors, Spacing, BorderRadius, Shadow, Typography } from '../theme';
-import { Calc, toR, GOAL_LABELS } from '../utils/calculations';
+import { Calc, toR } from '../utils/calculations';
 import PressableScale from '../components/PressableScale';
 
 const TICK_R_OUTER = 186;    // watch-face tick ring (outer edge)
@@ -95,19 +95,55 @@ export default function DashboardScreen({ navigation }: any) {
   const missingFields = [p.height, p.weight, p.age, p.gender, p.goal, p.activityFactor].filter(v => v == null).length;
   const hasProfile = missingFields === 0;
 
-  const quickActions = [];
-  if (missingFields > 0) quickActions.push({ t: '完善身体数据', d: `还差 ${missingFields} 项`, tab: 'SettingsPage', color: Colors.dotPurple });
-  if (!todayWorkout && todayTrainingLogs.length === 0) quickActions.push({ t: '开始今日训练', d: '从计划库开始', tab: 'TrainingPage', color: Colors.dotOrange });
-  if (todayDietEntries.length === 0) quickActions.push({ t: '记录第一餐', d: '热量和营养实时更新', tab: 'DietPage', color: Colors.dotBlue });
-  quickActions.push({ t: '回看记录', d: '训练和饮食按日合并', tab: 'HistoryPage', color: Colors.dotGreen });
+  // Time-based greeting
+  const hour = new Date().getHours();
+  const greeting = hour < 6 ? '夜深了' : hour < 12 ? '早上好' : hour < 18 ? '下午好' : '晚上好';
+  const now = new Date();
+  const dateLine = `${now.getMonth() + 1}月${now.getDate()}日 ${['周日','周一','周二','周三','周四','周五','周六'][now.getDay()]} · ${isTrainingDay ? '训练日' : '休息日'}`;
+
+  // Quick action cards (3 across, mirroring the design board)
+  const quickActionCards = [
+    {
+      t: '训练',
+      d: todayWorkout ? '继续训练' : todayTrainingLogs.length > 0 ? '再练一次' : '从计划库开始',
+      tab: 'TrainingPage',
+      color: Colors.dotGreen,
+    },
+    {
+      t: '饮食',
+      d: todayDietEntries.length > 0 ? '继续记录' : '记录三餐',
+      tab: 'DietPage',
+      color: Colors.dotOrange,
+    },
+    {
+      t: 'AI 助手',
+      d: '饮食问答',
+      tab: 'AiChatPage',
+      color: Colors.dotPurple,
+    },
+  ];
+
+  // AI banner tip, personalized from today's state
+  const remaining = Math.max(m.recommendedCalories - m.consumedCalories, 0);
+  const aiTip = !hasProfile
+    ? '完善身体数据后，我能给出更准的建议'
+    : m.consumedCalories > m.recommendedCalories
+      ? `今日已超 ${toR(m.consumedCalories - m.recommendedCalories)} 千卡，晚餐建议清淡些`
+      : todayDietEntries.length === 0
+        ? '还没记录饮食，问我热量和搭配吧'
+        : `还剩约 ${toR(remaining)} 千卡，想知道怎么吃最合适？`;
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-      {/* Rings */}
-      <View style={styles.ringsContainer}>
+      {/* Greeting */}
+      <Text style={styles.greeting}>{greeting}</Text>
+      <Text style={styles.greetingSub}>{dateLine}</Text>
+
+      {/* Watch-face ring card */}
+      <View style={styles.ringCard}>
         <View style={styles.ringsSvgWrapper}>
           <Svg width={RING_SIZE} height={RING_SIZE} viewBox={`0 0 ${RING_SIZE} ${RING_SIZE}`}>
-            {/* Watch-face minute ticks (dashed circle ≈ 60 marks) */}
+            {/* Watch-face minute ticks */}
             <Path d={TICKS_PATH} stroke="#d8d4cd" strokeWidth={1.5} strokeLinecap="round" opacity={0.55} />
             {ringConfigs.map(c => {
               const progress = ringValues[c.key].target > 0
@@ -128,9 +164,10 @@ export default function DashboardScreen({ navigation }: any) {
               <Text style={styles.ringsPercent}>{toR(m.consumedCalories)}</Text>
               <Text style={styles.ringsUnit}>千卡</Text>
             </View>
-            <Text style={styles.ringsCenterTarget}>目标 {toR(m.recommendedCalories)}</Text>
+            <Text style={styles.ringsCenterTarget}>目标 {toR(m.recommendedCalories)} kcal</Text>
           </View>
         </View>
+
         <View style={styles.legendGrid}>
           {ringConfigs.map(c => (
             <View key={c.key} style={styles.legendChip}>
@@ -143,7 +180,7 @@ export default function DashboardScreen({ navigation }: any) {
           ))}
         </View>
 
-        {/* Today's training burn - shown below the rings, not as a ring */}
+        {/* Today's training burn */}
         <View style={styles.burnPill}>
           <View style={styles.burnPillDot} />
           <Text style={styles.burnPillLabel}>今日训练消耗</Text>
@@ -151,116 +188,34 @@ export default function DashboardScreen({ navigation }: any) {
         </View>
       </View>
 
-      {/* Hero */}
-      <View style={styles.hero}>
-        <View style={styles.heroTop}>
-          <View style={[styles.badge, { backgroundColor: isTrainingDay ? Colors.accentLight : Colors.surfaceHover }]}>
-            <Text style={[styles.badgeText, { color: isTrainingDay ? Colors.accent : Colors.textSecondary }]}>
-              {isTrainingDay ? '训练日' : '休息日'}
-            </Text>
-          </View>
-          <Text style={styles.heroGoal}>当前目标：{profile.goal ? GOAL_LABELS[profile.goal] : '未设置'}</Text>
-        </View>
-        <Text style={styles.heroCalories}>{toR(m.recommendedCalories)} 千卡</Text>
-        <Text style={styles.heroDesc}>
-          {hasProfile
-            ? '今天把摄入、消耗和三大营养素尽量都闭环。'
-            : '身体数据和目标还没填完整，当前热量建议会先显示为 0。'}
-        </Text>
-      </View>
-
-      {/* Stat Cards */}
-      <View style={styles.statRow}>
-        <StatCard label="基础代谢" value={`${toR(m.bmr)} 千卡`} color={Colors.accent} fill={m.tdee > 0 ? Math.min(m.bmr / m.tdee, 1) : 0} />
-        <StatCard label="全天消耗" value={`${toR(m.tdee)} 千卡`} color={Colors.warning} />
-        <StatCard label="今日摄入" value={`${toR(m.consumedCalories)} 千卡`} color={Colors.info} fill={m.recommendedCalories > 0 ? Math.min(m.consumedCalories / m.recommendedCalories, 1) : 0} />
-      </View>
-
-      {/* Quick Actions */}
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>快捷入口</Text>
-        <Text style={styles.cardSub}>现在最可能要做的事</Text>
-        {quickActions.map((a, i) => (
-          <PressableScale key={i} style={styles.quickAction} onPress={() => navigation.navigate(a.tab)}>
-            <View style={[styles.quickDot, { backgroundColor: a.color }]} />
-            <View style={styles.quickBody}>
-              <Text style={styles.quickTitle}>{a.t}</Text>
-              <Text style={styles.quickDetail}>{a.d}</Text>
-            </View>
-            <Text style={styles.quickArrow}>→</Text>
+      {/* Quick action cards */}
+      <View style={styles.quickCardsRow}>
+        {quickActionCards.map((a, i) => (
+          <PressableScale key={i} style={styles.quickCard} onPress={() => navigation.navigate(a.tab)}>
+            <View style={[styles.quickCardDot, { backgroundColor: a.color }]} />
+            <Text style={styles.quickCardTitle}>{a.t}</Text>
+            <Text style={styles.quickCardSub}>{a.d}</Text>
           </PressableScale>
         ))}
       </View>
 
-      {/* Nutrition Progress */}
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>营养进度</Text>
-        <Text style={styles.cardSub}>训练日按 5:3:2 分配，休息日按 4:3:3</Text>
-        <ProgressBar label="总热量" current={m.consumedCalories} target={m.recommendedCalories} color="#dc6b2f" showPercent />
-        <ProgressBar label="碳水（克）" current={m.consumedCarbs} target={m.targetMacros.carbs} color="#2f6c8f" />
-        <ProgressBar label="蛋白质（克）" current={m.consumedProtein} target={m.targetMacros.protein} color="#1f8a70" />
-        <ProgressBar label="脂肪（克）" current={m.consumedFat} target={m.targetMacros.fat} color="#dc6b2f" />
-      </View>
-
-      {/* Training Snapshot */}
-      <View style={styles.card}>
-        <View style={[styles.accentBar, { backgroundColor: Colors.warning }]} />
-        <View style={{ flex: 1, paddingRight: Spacing.lg }}>
-          <Text style={styles.cardTitle}>训练快照</Text>
-          <Text style={styles.cardSub}>容量按重量乘次数累计，热量按 MET 公式叠加强度修正</Text>
-          <SnapshotRow label="当前计划" value={todayTrainingLogs.map(l => l.planUsed).join('、') || todayWorkout?.sourcePlanName || '尚未开始记录'} />
-          <SnapshotRow label="训练容量" value={`${toR(trainingVol)}`} />
-          <SnapshotRow label="预计消耗" value={`${toR(trainingCal)} 千卡`} />
+      {/* AI assistant banner */}
+      <PressableScale style={styles.aiBanner} onPress={() => navigation.navigate('AiChatPage')}>
+        <View style={styles.aiBannerAccent} />
+        <View style={{ flex: 1 }}>
+          <Text style={styles.aiBannerTitle}>AI 饮食助手</Text>
+          <Text style={styles.aiBannerTip} numberOfLines={1}>“{aiTip}”</Text>
         </View>
-      </View>
+        <Text style={styles.aiBannerArrow}>›</Text>
+      </PressableScale>
     </ScrollView>
   );
 }
-
-// ---- Sub-components ----
 
 function LoadingView() {
   return (
     <View style={styles.loading}>
       <Text style={styles.loadingText}>正在整理你的训练台</Text>
-    </View>
-  );
-}
-
-function StatCard({ label, value, color, fill = 0 }: { label: string; value: string; color: string; fill?: number }) {
-  return (
-    <View style={styles.statCard}>
-      <Text style={styles.statLabel}>{label}</Text>
-      <Text style={styles.statValue}>{value}</Text>
-      <View style={styles.statTrack}>
-        <View style={[styles.statFill, { width: `${fill * 100}%`, backgroundColor: color }]} />
-      </View>
-    </View>
-  );
-}
-
-function ProgressBar({ label, current, target, color, showPercent }: { label: string; current: number; target: number; color: string; showPercent?: boolean }) {
-  const pct = target <= 0 ? 0 : Math.min(current / target, 1);
-  return (
-    <View style={styles.progressRow}>
-      <View style={styles.progressMeta}>
-        <Text style={styles.progressLabel}>{label}</Text>
-        <Text style={styles.progressValue}>
-          {toR(current)}/{toR(target)}{showPercent ? `（${toR(pct * 100)}%）` : ''}
-        </Text>
-      </View>
-      <View style={styles.progressTrack}>
-        <View style={[styles.progressFill, { width: `${pct * 100}%`, backgroundColor: color }]} />
-      </View>
-    </View>
-  );
-}
-
-function SnapshotRow({ label, value }: { label: string; value: string }) {
-  return (
-    <View style={styles.snapshotRow}>
-      <Text style={styles.snapshotLabel}>{label}</Text>
-      <Text style={styles.snapshotValue}>{value}</Text>
     </View>
   );
 }
@@ -273,8 +228,16 @@ const styles = StyleSheet.create({
   loading: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: Colors.background },
   loadingText: { ...Typography.body, color: Colors.textMuted },
 
-  // Rings
-  ringsContainer: { alignItems: 'center', marginBottom: Spacing.xxl },
+  // Greeting
+  greeting: { fontSize: 27, fontWeight: '700', color: Colors.textPrimary, letterSpacing: -0.8, marginTop: Spacing.md },
+  greetingSub: { fontSize: 13, color: Colors.textMuted, marginTop: 4, marginBottom: Spacing.lg },
+
+  // Watch-face ring card
+  ringCard: {
+    backgroundColor: Colors.surface, borderRadius: BorderRadius.xxl,
+    padding: Spacing.xl, marginBottom: Spacing.lg, ...Shadow.elevated,
+    borderWidth: 1, borderColor: Colors.borderLight, alignItems: 'center',
+  },
   ringsSvgWrapper: { width: RING_SIZE, height: RING_SIZE, alignItems: 'center', justifyContent: 'center' },
   ringsCenter: { position: 'absolute', alignItems: 'center', justifyContent: 'center' },
   ringsCenterLabel: { fontSize: 12, fontWeight: '600', color: Colors.textMuted, marginBottom: 4 },
@@ -301,57 +264,25 @@ const styles = StyleSheet.create({
   burnPillLabel: { fontSize: 13, fontWeight: '500', color: Colors.textMuted },
   burnPillValue: { fontSize: 14, fontWeight: '700', color: Colors.textPrimary, fontVariant: ['tabular-nums'] as any },
 
-  // Hero
-  hero: {
-    backgroundColor: Colors.surface, borderRadius: BorderRadius.xxl,
-    padding: Spacing.xxl, marginBottom: Spacing.lg, ...Shadow.elevated,
+  // Quick action cards
+  quickCardsRow: { flexDirection: 'row', gap: 10, marginBottom: Spacing.lg },
+  quickCard: {
+    flex: 1, backgroundColor: Colors.surface, borderRadius: BorderRadius.xl,
+    padding: Spacing.md, borderWidth: 1, borderColor: Colors.borderLight, ...Shadow.card,
   },
-  heroTop: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: Spacing.lg },
-  badge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: BorderRadius.sm },
-  badgeText: { fontSize: 12, fontWeight: '600' },
-  heroGoal: { fontSize: 13, color: Colors.textMuted },
-  heroCalories: { ...Typography.metricLarge, marginBottom: Spacing.sm },
-  heroDesc: { ...Typography.caption, maxWidth: '80%' },
+  quickCardDot: { width: 10, height: 10, borderRadius: 5, marginBottom: 10 },
+  quickCardTitle: { fontSize: 15, fontWeight: '700', color: Colors.textPrimary },
+  quickCardSub: { fontSize: 11, color: Colors.textMuted, marginTop: 3 },
 
-  // Stats
-  statRow: { flexDirection: 'row', gap: 10, marginBottom: Spacing.lg },
-  statCard: {
-    flex: 1, backgroundColor: Colors.surface, borderRadius: BorderRadius.lg,
-    padding: Spacing.md, borderWidth: 1, borderColor: Colors.border,
-  },
-  statLabel: { fontSize: 12, color: Colors.textMuted, marginBottom: 4 },
-  statValue: { fontSize: 16, fontWeight: '700', color: Colors.textPrimary, marginBottom: 8 },
-  statTrack: { height: 3, backgroundColor: Colors.borderLight, borderRadius: 2, overflow: 'hidden' },
-  statFill: { height: '100%', borderRadius: 2 },
-
-  // Cards
-  card: {
-    backgroundColor: Colors.surface, borderRadius: BorderRadius.xxl,
-    padding: Spacing.xxl, marginBottom: Spacing.lg, ...Shadow.card,
+  // AI banner
+  aiBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: Colors.surface, borderRadius: BorderRadius.xl,
+    padding: Spacing.lg, marginBottom: Spacing.lg, ...Shadow.card,
     borderWidth: 1, borderColor: Colors.borderLight,
   },
-  cardTitle: { ...Typography.title, marginBottom: 4 },
-  cardSub: { ...Typography.caption, marginBottom: Spacing.lg },
-  accentBar: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 4, borderTopLeftRadius: BorderRadius.xxl, borderBottomLeftRadius: BorderRadius.xxl },
-
-  // Quick Actions
-  quickAction: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14, borderTopWidth: 1, borderTopColor: Colors.borderLight },
-  quickDot: { width: 10, height: 10, borderRadius: 5 },
-  quickBody: { flex: 1 },
-  quickTitle: { fontSize: 14, fontWeight: '600', color: Colors.textPrimary },
-  quickDetail: { fontSize: 12, color: Colors.textMuted, marginTop: 2 },
-  quickArrow: { fontSize: 16, color: Colors.textMuted },
-
-  // Progress
-  progressRow: { marginBottom: 14 },
-  progressMeta: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
-  progressLabel: { fontSize: 13, color: Colors.textSecondary },
-  progressValue: { fontSize: 13, fontWeight: '600', color: Colors.textPrimary, fontVariant: ['tabular-nums'] as any },
-  progressTrack: { height: 6, backgroundColor: Colors.borderLight, borderRadius: 3, overflow: 'hidden' },
-  progressFill: { height: '100%', borderRadius: 3 },
-
-  // Snapshot
-  snapshotRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 10, borderTopWidth: 1, borderTopColor: Colors.borderLight },
-  snapshotLabel: { fontSize: 13, color: Colors.textMuted },
-  snapshotValue: { fontSize: 13, fontWeight: '600', color: Colors.textPrimary },
+  aiBannerAccent: { width: 6, borderRadius: 3, alignSelf: 'stretch', backgroundColor: Colors.dotPurple },
+  aiBannerTitle: { fontSize: 15, fontWeight: '700', color: Colors.textPrimary },
+  aiBannerTip: { fontSize: 12, color: Colors.textSecondary, marginTop: 3 },
+  aiBannerArrow: { fontSize: 22, color: Colors.textMuted, marginRight: 4 },
 });
