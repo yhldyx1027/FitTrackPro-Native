@@ -62,10 +62,7 @@ export default function HistoryScreen() {
   const todayStr = getTodayKey();
   const weekAgo = getTodayKey(new Date(Date.now() - 7 * 86400000));
   const last7Logs = historyTrainingLogs.filter(l => l.date >= weekAgo);
-  const recentLogs = historyTrainingLogs.slice(0, 6);
   const weights = [...app.weightHistory].sort((a, b) => a.date.localeCompare(b.date)).slice(-7);
-
-  const DOT_COLORS = ['#1f8a70', '#2f6c8f', '#dc6b2f', '#7c5ce7', '#c8476c', '#dc9b3f'];
 
   // Weight trend chart geometry
   const chartW = 340, chartH = 110, padX = 14, padY = 14;
@@ -205,27 +202,6 @@ export default function HistoryScreen() {
         </View>
       )}
 
-      {/* Recent training records */}
-      <Text style={styles.sectionTitle}>训练记录</Text>
-      {recentLogs.length === 0 ? (
-        <Text style={styles.noData}>还没有训练记录。</Text>
-      ) : (
-        recentLogs.map((log, i) => (
-          <PressableScale
-            key={log.id}
-            style={styles.logCard}
-            onPress={() => { setSelectedDate(log.date); setPreviewVisible(true); }}
-          >
-            <View style={[styles.logDot, { backgroundColor: DOT_COLORS[i % DOT_COLORS.length] }]} />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.logDay}>{log.date.slice(5).replace('-', '月')}日</Text>
-              <Text style={styles.logName} numberOfLines={1}>{log.planUsed} · {log.sets.slice(0, 3).map(s => s.exercise).join(' / ')}</Text>
-            </View>
-            <Text style={styles.logKcal}>{toR(log.calories)} kcal</Text>
-          </PressableScale>
-        ))
-      )}
-
       {/* Preview Modal */}
         <Modal
           visible={previewVisible}
@@ -321,17 +297,6 @@ const styles = StyleSheet.create({
   sectionValue: { fontSize: 13, fontWeight: '700', color: Colors.accent },
   chartLabels: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 4 },
   chartLabel: { fontSize: 9.5, color: Colors.textMuted },
-
-  logCard: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    backgroundColor: Colors.surface, borderRadius: BorderRadius.lg,
-    padding: Spacing.md, marginBottom: Spacing.sm, ...Shadow.card,
-    borderWidth: 1, borderColor: Colors.borderLight,
-  },
-  logDot: { width: 12, height: 12, borderRadius: 6 },
-  logDay: { fontSize: 13, fontWeight: '700', color: Colors.textPrimary },
-  logName: { fontSize: 11, color: Colors.textMuted, marginTop: 2 },
-  logKcal: { fontSize: 12.5, fontWeight: '700', color: Colors.textSecondary },
 
   card: {
     backgroundColor: Colors.surface, borderRadius: BorderRadius.xxl,
