@@ -6,7 +6,7 @@
 // bundled into the app or uploaded anywhere except DeepSeek.
 // ============================================================
 
-import { Profile, DietEntry, DietLog, TrainingLog, TrainingPlan, Workout, WeightRecord, ExerciseType } from '../types';
+import { Profile, DietEntry, DietLog, TrainingLog, TrainingPlan, Workout, WorkoutSet, WeightRecord, ExerciseType, FoodItem } from '../types';
 import { Calc, toR, GOAL_LABELS, GENDER_LABELS, MEAL_LABELS } from '../utils/calculations';
 
 export const DEEPSEEK_ENDPOINT = 'https://api.deepseek.com/chat/completions';
@@ -30,6 +30,7 @@ export interface AiChatMessage {
 export interface AiContext {
   profile: Profile;
   dietEntries: DietEntry[];
+  foodDb: FoodItem[];
   trainingLogs: TrainingLog[];
   isTrainingDay: boolean;
   trainingCal: number;
@@ -125,13 +126,51 @@ function formatWeightHistory(weights: WeightRecord[]): string {
   return sorted.map(w => `${w.date.slice(5)}:${w.weight}kg`).join(' → ');
 }
 
+function formatTodayFoods(entries: DietEntry[]): string {
+  if (entries.length === 0) return '无记录';
+  return entries
+    .map(e => {
+      const total = e.calories * e.servings;
+      return `${MEAL_LABELS[e.mealType]}·${e.name}×${e.servings}(${toR(total)}千卡,碳${toR(e.carbs * e.servings)} 蛋${toR(e.protein * e.servings)} 脂${toR(e.fat * e.servings)})`;
+    })
+    .join('；');
+}
+
+function formatTodayTraining(workout: Workout | null, logs: TrainingLog[]): string {
+  const parts: string[] = [];
+  if (workout) {
+    const done = workout.sets.filter(s => s.completed).length;
+    parts.push(`进行中：${workout.sourcePlanName}（已勾 ${done}/${workout.sets.length} 组）`);
+  }
+  for (const log of logs) {
+    // Group sets by exercise and summarize each set compactly.
+    const byEx = new Map<string, WorkoutSet[]>();
+    log.sets.forEach(s => {
+      const k = s.exerciseId || s.exercise;
+      if (!byEx.has(k)) byEx.set(k, []);
+      byEx.get(k)!.push(s);
+    });
+    const exTexts = Array.from(byEx.values()).map(sets => {
+      const setName = sets[0]?.exercise || '动作';
+      const setTexts = sets.map(s => {
+        if (s.exerciseType === 'cardio') return `${s.reps}分钟`;
+        if (s.exerciseType === 'bodyweight') return `自重×${s.reps}`;
+        return `${s.weight || 0}kg×${s.reps}`;
+      }).join('/');
+      return `${setName} ${sets.length}组(${setTexts})`;
+    });
+    parts.push(`${log.planUsed}：${exTexts.join('；')}`);
+  }
+  return parts.length > 0 ? parts.join(' ｜ ') : '无';
+}
+
 function last7DaysTrainingCount(logs: TrainingLog[]): number {
   const cutoff = daysAgoKey(7);
   return logs.filter(l => l.date >= cutoff).length;
 }
 
 export function buildAiSystemPrompt(ctx: AiContext): string {
-  const { profile, dietEntries, isTrainingDay, trainingCal, recentTrainingLogs, recentDietLogs, weightHistory } = ctx;
+  const { profile, dietEntries, foodDb, isTrainingDay, trainingCal, recentTrainingLogs, recentDietLogs, weightHistory } = ctx;
 
   const hasProfile = !!(profile.height && profile.weight && profile.age && profile.gender && profile.goal);
   const genderLabel = profile.gender ? GENDER_LABELS[profile.gender] : '未设置';
@@ -174,6 +213,11 @@ export function buildAiSystemPrompt(ctx: AiContext): string {
       ? `性别：${genderLabel}｜身高：${profile.height}cm｜体重：${profile.weight}kg｜年龄：${profile.age}岁｜目标：${goalLabel}｜活动系数：${profile.activityFactor}`
       : '尚未完善（身高/体重/年龄/性别/目标不完整），请先提示用户到「设置」页补全身体数据，再结合用户问题给通用估算。',
     '',
+    '【食物库】',
+    foodDb.length > 0
+      ? foodDb.map(f => `${f.name}(${f.calories}千卡,碳${f.carbs} 蛋${f.protein} 脂${f.fat})`).join('；')
+      : '暂无',
+    '',
     '【今日数据】',
     `今日状态：${isTrainingDay ? '训练日' : '休息日'}（宏量比例 ${isTrainingDay ? '碳水50%·蛋白30%·脂肪20%' : '碳水40%·蛋白30%·脂肪30%'}）`,
     `基础代谢 BMR：${toR(bmr)} 千卡`,
@@ -182,6 +226,7 @@ export function buildAiSystemPrompt(ctx: AiContext): string {
     `宏量目标：碳水 ${toR(macros.carbs)}g｜蛋白质 ${toR(macros.protein)}g｜脂肪 ${toR(macros.fat)}g`,
     `今日已摄入：${toR(consumed.calories)} 千卡（碳水 ${toR(consumed.carbs)}g／蛋白 ${toR(consumed.protein)}g／脂肪 ${toR(consumed.fat)}g），剩余额度约 ${toR(remaining)} 千卡`,
     `按餐次：${mealBreakdown}`,
+    `今日具体饮食：${formatTodayFoods(dietEntries)}`,
     '',
     '【近期历史】',
     `近7天训练 ${freq7} 次｜近10次训练：${trainingHistory}`,
@@ -196,9 +241,11 @@ export function buildAiSystemPrompt(ctx: AiContext): string {
     '5. 回答控制在 2~6 行，可用「热量｜碳水｜蛋白｜脂肪」格式排版，不要冗长。',
     '6. 不要编造 API、链接或下载地址；不确定的数据如实说明并建议以食品标签为准。',
     '7. 请记住本对话中用户提到过的食物、口味和习惯，后续回答主动引用，不要重复问已经说过的信息。',
-    '8. 只要用户描述了他吃了什么（如"我中午吃了200克鸡胸肉和一碗米饭""今天早餐吃了两个鸡蛋和燕麦""记录一下我刚吃的"，无论是否明确要求计算热量，也无论这是第几轮对话），都必须：',
+    '8. 只要满足以下任一情况（无论这是第几轮对话），都必须在回答最后输出结构化 JSON：',
+    '   (a) 用户描述了他吃了什么（如"我中午吃了200克鸡胸肉和一碗米饭""今天早餐吃了两个鸡蛋和燕麦""记录一下我刚吃的"）；',
+    '   (b) 用户要求添加、修改或更新食物库中的食物（如"把鸡胸肉的热量改成165""帮我加一条燕麦""鸡胸肉的蛋白不对，改成31"）——修改时 name 必须与【食物库】中现有食物的名称完全一致，并输出修正后的完整数值；',
     '   - 先逐项估算并汇总这顿饭的总热量、碳水、蛋白质、脂肪（克），份量不确定时做合理假设并注明；',
-    '   - 然后在回答的最后单独输出一行结构化 JSON（即使只是"记录一下"也要输出），格式必须严格为：',
+    '   - 然后在回答的最后单独输出一行结构化 JSON（记录/添加/修改都要输出），格式必须严格为：',
     '     __FOOD_JSON__{"name":"<简洁食物名，如：鸡胸肉+米饭 午餐>","calories":<整数>,"carbs":<数字>,"protein":<数字>,"fat":<数字>}__END__',
     '   - name 要能概括这顿饭（含主要食物与份量），四个数值四舍五入到整数或一位小数；',
     '   - 除了 __FOOD_JSON__ 那一行，正文中不要出现其他大括号 JSON，确保我能解析出这一行。',
@@ -237,6 +284,7 @@ export function buildTrainingSystemPrompt(ctx: AiTrainingContext): string {
     isTrainingDay
       ? `今日训练：${ctx.todayWorkout?.sourcePlanName ?? (ctx.todayTrainingLogs.map(l => l.planUsed).join('、') || '进行中')}｜实时容量 ${toR(trainingVol)}｜消耗 ${toR(trainingCal)} 千卡`
       : '今天还没有训练，可以建议安排训练或休息恢复。',
+    `今日训练明细：${formatTodayTraining(ctx.todayWorkout, ctx.todayTrainingLogs)}`,
     '',
     '【计划库现状】',
     planList,

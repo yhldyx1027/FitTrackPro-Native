@@ -123,7 +123,7 @@ export default function DashboardScreen({ navigation }: any) {
             })}
           </Svg>
           <View style={styles.ringsCenter}>
-            <Text style={styles.ringsCenterLabel}>建议摄入</Text>
+            <Text style={styles.ringsCenterLabel}>实际摄入</Text>
             <View style={styles.ringsCenterValueRow}>
               <Text style={styles.ringsPercent}>{toR(m.consumedCalories)}</Text>
               <Text style={styles.ringsUnit}>千卡</Text>

@@ -56,13 +56,15 @@ function newId() {
   return 'msg-' + Math.random().toString(36).slice(2, 10);
 }
 
-// Heuristic: does the user's message read like "I ate X" (a food report)
-// rather than a general nutrition question? Used to decide whether a silent
-// structured-data retry is worthwhile.
-function looksLikeFoodReport(msg: string): boolean {
+// Heuristic: does the user's message describe what they ate, or ask to
+// add/edit a food library item? Used to decide whether a silent structured-data
+// retry is worthwhile (helps long conversations where the model drifts).
+function looksLikeFoodIntent(msg: string): boolean {
   const hasEat = /吃了|喝了|吃过|吃完|早餐|午餐|晚餐|加餐|ate|had|eaten|meal|breakfast|lunch|dinner/i.test(msg);
   const hasAmount = /(\d+\s*(克|g|kg|gram|grams)|碗|个|份|根|杯|盘|只|半|块|片|bowl|cup|plate|piece)/i.test(msg);
-  return hasEat && hasAmount;
+  const hasEdit = /(添加|加入|新增|更新|修改|编辑|改成|换成|调整|纠正|热量不对|数据不对|帮我加|加一条|删掉)/.test(msg)
+    && /(食物|库|热量|碳水|蛋白|脂肪|千卡|卡路里|食物库)/.test(msg);
+  return (hasEat && hasAmount) || hasEdit;
 }
 
 // Heuristic: does the user's message ask to GENERATE a training plan?
@@ -184,10 +186,11 @@ export default function AiChatScreen({ navigation }: any) {
     if (!generatedFood) return;
     const exists = app.foodDb.some(f => f.name === generatedFood.name);
     if (exists) {
-      setFoodExists(true);
-      return;
+      // Update the existing library entry in place (AI asked to edit it).
+      await app.replaceFoodDb(app.foodDb.map(f => (f.name === generatedFood.name ? generatedFood : f)));
+    } else {
+      await app.replaceFoodDb([...app.foodDb, generatedFood]);
     }
-    await app.replaceFoodDb([...app.foodDb, generatedFood]);
     setFoodAdded(true);
   };
 
@@ -244,6 +247,7 @@ export default function AiChatScreen({ navigation }: any) {
     const dctx: AiContext = {
       profile: app.profile,
       dietEntries: app.todayDietEntries,
+      foodDb: app.foodDb,
       trainingLogs: app.todayTrainingLogs,
       isTrainingDay: app.isTrainingDay,
       trainingCal: app.trainingCal,
@@ -410,7 +414,7 @@ export default function AiChatScreen({ navigation }: any) {
         // Long conversations sometimes make the model forget the structured
         // marker. If the user clearly described what they ate but no food was
         // parsed, silently retry once asking only for the structured data.
-        if (!food && looksLikeFoodReport(content)) {
+        if (!food && looksLikeFoodIntent(content)) {
           try {
             const retryReply = await chatWithDeepSeek(
               settings.apiKey,
@@ -613,19 +617,23 @@ export default function AiChatScreen({ navigation }: any) {
             <View style={styles.foodGenCard}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.foodGenTitle}>
-                  {foodAdded ? '已添加到食物库' : foodExists ? '该食物已在食物库中' : '已生成食物，点击添加入库'}
+                  {foodAdded
+                    ? (foodExists ? '已更新食物库' : '已添加到食物库')
+                    : foodExists
+                      ? '该食物已在食物库中，可点击更新'
+                      : '已生成食物，点击添加入库'}
                 </Text>
                 <Text style={styles.foodGenMeta}>
                   {generatedFood.name}｜{generatedFood.calories}千卡｜碳{generatedFood.carbs} 蛋{generatedFood.protein} 脂{generatedFood.fat}
                 </Text>
               </View>
-              {foodAdded || foodExists ? (
+              {foodAdded ? (
                 <PressableScale style={styles.foodGenBtn} onPress={goAddFood}>
                   <Text style={styles.foodGenBtnText}>去饮食页查看</Text>
                 </PressableScale>
               ) : (
                 <PressableScale style={styles.foodGenBtn} onPress={handleAddFood}>
-                  <Text style={styles.foodGenBtnText}>添加到食物库</Text>
+                  <Text style={styles.foodGenBtnText}>{foodExists ? '更新食物库' : '添加到食物库'}</Text>
                 </PressableScale>
               )}
             </View>
